@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
 })
 
 export interface ContentGenerationParams {
@@ -52,23 +53,84 @@ Format your response as JSON:
 }`
 
   try {
+    const model = process.env.OPENAI_MODEL || 'gpt-4-turbo-preview'
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      response_format: { type: 'json_object' },
-      temperature: 0.8,
+      // Note: NVIDIA API may not support response_format, so we'll handle JSON parsing manually
+      temperature: 0.2,
+      top_p: 0.7,
       max_tokens: 2000,
     })
 
-    const content = JSON.parse(completion.choices[0].message.content || '{}')
+    const responseText = completion.choices[0].message.content || '{}'
+    
+    // Try to parse JSON from the response
+    let content: any
+    try {
+      // If response is wrapped in markdown code blocks, extract JSON
+      const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) || responseText.match(/```\n?([\s\S]*?)\n?```/)
+      const jsonText = jsonMatch ? jsonMatch[1] : responseText
+      content = JSON.parse(jsonText)
+    } catch (parseError) {
+      // If JSON parsing fails, try to extract structured data from text
+      console.warn('Failed to parse JSON, attempting to extract data from text')
+      content = extractContentFromText(responseText)
+    }
+    
     return content as GeneratedContent
   } catch (error) {
     console.error('Error generating content:', error)
     throw new Error('Failed to generate content')
   }
+}
+
+// Helper function to extract content from non-JSON text responses
+function extractContentFromText(text: string): GeneratedContent {
+  // Basic extraction logic - you can enhance this
+  const lines = text.split('\n')
+  const content: any = {
+    hook: '',
+    script: '',
+    caption: '',
+    hashtags: [],
+    cta: '',
+    imagePrompts: []
+  }
+  
+  let currentSection = ''
+  for (const line of lines) {
+    if (line.toLowerCase().includes('hook:')) {
+      currentSection = 'hook'
+      content.hook = line.split(':')[1]?.trim() || ''
+    } else if (line.toLowerCase().includes('script:')) {
+      currentSection = 'script'
+      content.script = line.split(':')[1]?.trim() || ''
+    } else if (line.toLowerCase().includes('caption:')) {
+      currentSection = 'caption'
+      content.caption = line.split(':')[1]?.trim() || ''
+    } else if (line.toLowerCase().includes('cta:')) {
+      currentSection = 'cta'
+      content.cta = line.split(':')[1]?.trim() || ''
+    } else if (line.trim().startsWith('#')) {
+      content.hashtags.push(line.trim())
+    } else if (currentSection && line.trim()) {
+      content[currentSection] += ' ' + line.trim()
+    }
+  }
+  
+  // Default image prompts if not found
+  if (content.imagePrompts.length === 0) {
+    content.imagePrompts = [
+      'Modern minimalist finance background with money symbols',
+      'Professional financial growth chart illustration'
+    ]
+  }
+  
+  return content
 }
 
 export async function generateImagePrompt(topic: string, style: string = 'modern minimalist'): Promise<string> {
@@ -95,19 +157,30 @@ Keep it under 400 characters.`,
 
 export async function generateImage(prompt: string): Promise<string> {
   try {
-    const response = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt: prompt,
-      n: 1,
-      size: '1024x1792', // Closest to 9:16 ratio
-      quality: 'hd',
-      style: 'vivid',
-    })
-
-    return response.data[0].url || ''
+    // Check if we have DALL-E available (OpenAI)
+    if (process.env.OPENAI_BASE_URL?.includes('openai.com')) {
+      const response = await openai.images.generate({
+        model: 'dall-e-3',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1792', // Closest to 9:16 ratio
+        quality: 'hd',
+        style: 'vivid',
+      })
+      return response.data[0].url || ''
+    } else {
+      // For NVIDIA or other APIs without image generation, use placeholder service
+      // You can replace this with any image generation API you have
+      console.warn('Image generation not available with current API, using placeholder')
+      
+      // Using a placeholder image service (you can replace with your own)
+      const encodedPrompt = encodeURIComponent(prompt.substring(0, 50))
+      return `https://placehold.co/1080x1920/1e40af/white?text=${encodedPrompt}`
+    }
   } catch (error) {
     console.error('Error generating image:', error)
-    throw new Error('Failed to generate image')
+    // Fallback to placeholder
+    return 'https://placehold.co/1080x1920/1e40af/white?text=Finance+Content'
   }
 }
 
