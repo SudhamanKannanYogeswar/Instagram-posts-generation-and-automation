@@ -136,6 +136,8 @@ async function composeFrame(
 async function findFfmpeg(): Promise<string> {
   const candidates = [
     'ffmpeg',
+    // Windows WinGet install path
+    `${process.env.LOCALAPPDATA}\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe`,
     'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
     'C:\\ffmpeg\\bin\\ffmpeg.exe',
     '/usr/bin/ffmpeg',
@@ -147,7 +149,7 @@ async function findFfmpeg(): Promise<string> {
       return p
     } catch {}
   }
-  throw new Error('ffmpeg not found. Install it: Windows: choco install ffmpeg | Mac: brew install ffmpeg | Linux: sudo apt install ffmpeg')
+  throw new Error('ffmpeg not found. Install it: Windows: winget install Gyan.FFmpeg | Mac: brew install ffmpeg | Linux: sudo apt install ffmpeg')
 }
 
 /** Main: generate all frames then assemble into MP4 */
