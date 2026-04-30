@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Instagram, ArrowLeft, Sparkles, Loader2 } from 'lucide-react'
 
-export default function CreateReelPage() {
+function CreateReelForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const mode = searchParams.get('mode') || 'manual'
@@ -29,23 +30,14 @@ export default function CreateReelPage() {
     try {
       const response = await fetch('/api/content/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          topic: topic.trim(),
-          tone,
-          generationMode: mode,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: topic.trim(), tone, generationMode: mode }),
       })
 
       const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate content')
-      }
+      if (!response.ok) throw new Error(data.error || 'Failed to generate content')
 
-      // Redirect to preview page
       router.push(`/dashboard/preview/${data.data.reel.id}`)
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
@@ -138,7 +130,7 @@ export default function CreateReelPage() {
               {isGenerating ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Generating Content...
+                  Generating Content... (this takes ~20 seconds)
                 </>
               ) : (
                 <>
@@ -190,5 +182,20 @@ export default function CreateReelPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function CreateReelPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <CreateReelForm />
+    </Suspense>
   )
 }

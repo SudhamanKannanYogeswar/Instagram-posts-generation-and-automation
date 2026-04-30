@@ -1,10 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ['zydyaigtlvrylqkrbxhz.supabase.co'],
-  },
-  experimental: {
-    serverActions: true,
+    domains: ['zydyaigtlvrylqkrbxhz.supabase.co', 'placehold.co'],
   },
 }
 

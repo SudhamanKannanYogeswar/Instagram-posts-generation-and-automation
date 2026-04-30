@@ -167,7 +167,7 @@ export async function generateImage(prompt: string): Promise<string> {
         quality: 'hd',
         style: 'vivid',
       })
-      return response.data[0].url || ''
+      return response.data?.[0]?.url || ''
     } else {
       // For NVIDIA or other APIs without image generation, use placeholder service
       // You can replace this with any image generation API you have
