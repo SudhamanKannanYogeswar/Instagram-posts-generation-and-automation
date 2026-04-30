@@ -215,30 +215,45 @@ Keep it under 400 characters.`,
 
 export async function generateImage(prompt: string): Promise<string> {
   try {
-    // Check if we have DALL-E available (OpenAI)
-    if (process.env.OPENAI_BASE_URL?.includes('openai.com')) {
-      const response = await openai.images.generate({
-        model: 'dall-e-3',
+    // NVIDIA FLUX.1-schnell image generation - same API key, different endpoint
+    const response = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
         prompt: prompt,
-        n: 1,
-        size: '1024x1792', // Closest to 9:16 ratio
-        quality: 'hd',
-        style: 'vivid',
-      })
-      return response.data?.[0]?.url || ''
-    } else {
-      // For NVIDIA or other APIs without image generation, use placeholder service
-      // You can replace this with any image generation API you have
-      console.warn('Image generation not available with current API, using placeholder')
-      
-      // Using a placeholder image service (you can replace with your own)
-      const encodedPrompt = encodeURIComponent(prompt.substring(0, 50))
-      return `https://placehold.co/1080x1920/1e40af/white?text=${encodedPrompt}`
+        width: 1024,
+        height: 1024,
+        num_inference_steps: 4,
+        guidance: 3.5,
+        num_images: 1,
+        seed: Math.floor(Math.random() * 1000000),
+      }),
+    })
+
+    if (!response.ok) {
+      const errText = await response.text()
+      console.error('NVIDIA image generation error:', errText)
+      throw new Error(`Image generation failed: ${response.status}`)
     }
+
+    const data = await response.json()
+
+    // NVIDIA returns base64 encoded image
+    if (data.artifacts?.[0]?.base64) {
+      // Return as data URL so it can be displayed directly
+      return `data:image/jpeg;base64,${data.artifacts[0].base64}`
+    }
+
+    throw new Error('No image data in response')
   } catch (error) {
-    console.error('Error generating image:', error)
-    // Fallback to placeholder
-    return 'https://placehold.co/1080x1920/1e40af/white?text=Finance+Content'
+    console.error('Error generating image with NVIDIA FLUX:', error)
+    // Fallback to a styled placeholder
+    const encoded = encodeURIComponent(prompt.substring(0, 40))
+    return `https://placehold.co/1080x1920/1a1a2e/white?text=${encoded}`
   }
 }
 

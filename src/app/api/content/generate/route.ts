@@ -8,13 +8,10 @@ export async function POST(request: NextRequest) {
     const { topic, tone, userId, generationMode = 'manual' } = body
 
     if (!topic) {
-      return NextResponse.json(
-        { error: 'Topic is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Topic is required' }, { status: 400 })
     }
 
-    // Create content request
+    // 1. Create content request record
     const { data: contentRequest, error: requestError } = await supabaseAdmin
       .from('content_requests')
       .insert({
@@ -26,15 +23,9 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (requestError) {
-      console.error('Error creating content request:', requestError)
-      return NextResponse.json(
-        { error: 'Failed to create content request' },
-        { status: 500 }
-      )
-    }
+    if (requestError) throw new Error('Failed to create content request: ' + requestError.message)
 
-    // Generate content using OpenAI
+    // 2. Generate text content via NVIDIA Llama
     const generatedContent = await generateFinanceContent({
       topic,
       tone: tone || 'educational',
@@ -42,7 +33,7 @@ export async function POST(request: NextRequest) {
       includeStats: true,
     })
 
-    // Save generated content
+    // 3. Save generated content
     const { data: content, error: contentError } = await supabaseAdmin
       .from('generated_content')
       .insert({
@@ -52,71 +43,66 @@ export async function POST(request: NextRequest) {
         caption: generatedContent.caption,
         hashtags: generatedContent.hashtags,
         cta: generatedContent.cta,
-        topic: topic,
+        topic,
         tone: tone || 'educational',
       })
       .select()
       .single()
 
-    if (contentError) {
-      console.error('Error saving content:', contentError)
-      return NextResponse.json(
-        { error: 'Failed to save content' },
-        { status: 500 }
-      )
-    }
+    if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
-    // Generate images
-    const imagePromises = generatedContent.imagePrompts.map(async (prompt, index) => {
-      try {
+    // 4. Generate images using NVIDIA FLUX.1-schnell
+    // Build finance-specific prompts from the content
+    const imagePrompts = buildImagePrompts(topic, generatedContent.imagePrompts)
+
+    const imageResults = await Promise.allSettled(
+      imagePrompts.map(async (prompt, index) => {
         const imageUrl = await generateImage(prompt)
-        
-        // In production, download and upload to Supabase Storage
-        // For now, just save the URL
-        return await supabaseAdmin
+        const imageType = index === 0 ? 'background' : 'overlay'
+
+        // Store image record (URL is either base64 data URL or placeholder)
+        const { data: imgRecord } = await supabaseAdmin
           .from('generated_images')
           .insert({
             content_id: content.id,
             image_url: imageUrl,
-            storage_path: `generated/${content.id}/image_${index}.png`,
-            prompt: prompt,
-            image_type: index === 0 ? 'background' : 'overlay',
+            storage_path: `generated/${content.id}/image_${index}.jpg`,
+            prompt,
+            image_type: imageType,
+            width: 1024,
+            height: 1024,
           })
           .select()
           .single()
-      } catch (error) {
-        console.error('Error generating image:', error)
-        return null
-      }
-    })
 
-    const images = await Promise.all(imagePromises)
+        return imgRecord
+      })
+    )
 
-    // Update request status
+    const images = imageResults
+      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value !== null)
+      .map(r => r.value)
+
+    // 5. Update request status
     await supabaseAdmin
       .from('content_requests')
       .update({ status: 'completed' })
       .eq('id', contentRequest.id)
 
-    // Create reel entry
+    // 6. Create reel entry
     const { data: reel } = await supabaseAdmin
       .from('reels')
       .insert({
         content_id: content.id,
         user_id: userId || null,
-        status: 'draft',
+        status: 'pending_approval',
       })
       .select()
       .single()
 
     return NextResponse.json({
       success: true,
-      data: {
-        contentRequest,
-        content,
-        images: images.filter(img => img !== null),
-        reel,
-      },
+      data: { contentRequest, content, images, reel },
     })
   } catch (error: any) {
     console.error('Error in content generation:', error)
@@ -125,4 +111,21 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+// Build rich, finance-specific image prompts
+function buildImagePrompts(topic: string, aiPrompts: string[]): string[] {
+  const financeStyles = [
+    `Professional finance Instagram Reel background about "${topic}". Modern dark blue gradient, gold accents, floating coins, upward trending chart lines, clean minimalist design, 9:16 vertical format, no text`,
+    `Vibrant finance content visual for "${topic}". Abstract money symbols, green growth arrows, dollar signs, wealth visualization, modern gradient background, Instagram Reels format, photorealistic, no text`,
+  ]
+
+  // Use AI-generated prompts if available, otherwise use our finance-specific ones
+  const prompts = aiPrompts && aiPrompts.length >= 2
+    ? aiPrompts.map((p, i) =>
+        `${p}, professional finance Instagram content, modern design, vibrant colors, ${i === 0 ? 'dark background' : 'light background'}, no text overlay, high quality`
+      )
+    : financeStyles
+
+  return prompts.slice(0, 2)
 }

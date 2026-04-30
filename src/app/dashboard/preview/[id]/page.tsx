@@ -17,7 +17,10 @@ import {
   Hash,
   MessageSquare,
   Zap,
-  FileText
+  FileText,
+  Video,
+  Download,
+  Play
 } from 'lucide-react'
 
 interface ContentData {
@@ -40,6 +43,7 @@ interface ContentData {
     id: string
     image_url: string
     image_type: string
+    prompt?: string
   }>
 }
 
@@ -55,6 +59,9 @@ export default function PreviewPage() {
   const [scheduledTime, setScheduledTime] = useState('')
   const [copied, setCopied] = useState('')
   const [activeTab, setActiveTab] = useState<'hook' | 'script' | 'caption' | 'hashtags'>('hook')
+  const [generatingVideo, setGeneratingVideo] = useState(false)
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoError, setVideoError] = useState('')
 
   useEffect(() => {
     fetchContent()
@@ -69,10 +76,38 @@ export default function PreviewPage() {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Failed to fetch content')
       setData(result.data)
+      // If video already exists, show it
+      if (result.data?.reel?.video_url) {
+        setVideoUrl(result.data.reel.video_url)
+      }
     } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGenerateVideo = async () => {
+    setGeneratingVideo(true)
+    setVideoError('')
+    try {
+      const response = await fetch(`/api/content/${reelId}/generate-video`, {
+        method: 'POST',
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        if (result.error === 'ffmpeg_missing') {
+          setVideoError(`FFmpeg not installed. ${result.installGuide}`)
+        } else {
+          throw new Error(result.error || 'Video generation failed')
+        }
+        return
+      }
+      setVideoUrl(result.data.videoUrl)
+    } catch (err: any) {
+      setVideoError(err.message)
+    } finally {
+      setGeneratingVideo(false)
     }
   }
 
@@ -324,26 +359,119 @@ export default function PreviewPage() {
             {images && images.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Generated Visuals</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <span>🎨</span> Generated Visuals
+                    <span className="text-xs font-normal text-gray-500 ml-1">
+                      (Powered by NVIDIA FLUX.1)
+                    </span>
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-3">
                     {images.map((img, i) => (
-                      <div key={i} className="aspect-[9/16] rounded-lg overflow-hidden bg-gray-100 border">
-                        <img
-                          src={img.image_url}
-                          alt={`Generated visual ${i + 1}`}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://placehold.co/1080x1920/1e40af/white?text=Finance+Content'
-                          }}
-                        />
+                      <div key={i} className="relative group">
+                        <div className="aspect-[9/16] rounded-lg overflow-hidden bg-gray-100 border-2 border-gray-200 hover:border-blue-400 transition-colors">
+                          {img.image_url?.startsWith('data:') || img.image_url?.startsWith('http') ? (
+                            <img
+                              src={img.image_url}
+                              alt={`Generated visual ${i + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://placehold.co/1080x1920/1e40af/white?text=Finance+Visual'
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
+                              <p className="text-white text-xs text-center px-2 opacity-70">{img.prompt}</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="absolute bottom-2 left-2 right-2">
+                          <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full capitalize">
+                            {img.image_type}
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                    These visuals will be used as backgrounds in your Reel video
+                  </p>
                 </CardContent>
               </Card>
             )}
+
+            {/* Video Generation */}
+            <Card className="border-2 border-purple-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Video className="w-5 h-5 text-purple-600" />
+                  Reel Video
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {videoUrl ? (
+                  <div className="space-y-3">
+                    <div className="aspect-[9/16] max-h-96 rounded-lg overflow-hidden bg-black mx-auto" style={{ maxWidth: 200 }}>
+                      <video
+                        src={videoUrl}
+                        controls
+                        className="w-full h-full object-contain"
+                        poster={data?.images?.[0]?.image_url}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <a href={videoUrl} download="reel.mp4" className="flex-1">
+                        <Button variant="outline" className="w-full" size="sm">
+                          <Download className="w-4 h-4 mr-2" /> Download Video
+                        </Button>
+                      </a>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleGenerateVideo}
+                        disabled={generatingVideo}
+                      >
+                        <Sparkles className="w-4 h-4 mr-1" /> Regenerate
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    {videoError ? (
+                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
+                        <p className="text-sm text-red-700 font-medium mb-1">Video generation failed</p>
+                        <p className="text-xs text-red-600">{videoError}</p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 mb-4">
+                        Generate a complete Reel video with your content, images, and text overlays
+                      </p>
+                    )}
+                    <Button
+                      onClick={handleGenerateVideo}
+                      disabled={generatingVideo}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      {generatingVideo ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Generating Video... (~30s)
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-2" />
+                          Generate Reel Video
+                        </>
+                      )}
+                    </Button>
+                    <p className="text-xs text-gray-400 mt-3">
+                      Requires FFmpeg installed on your machine
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Right: Actions Panel */}
