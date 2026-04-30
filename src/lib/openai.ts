@@ -68,19 +68,7 @@ Format your response as JSON:
 
     const responseText = completion.choices[0].message.content || '{}'
     
-    // Try to parse JSON from the response
-    let content: any
-    try {
-      // If response is wrapped in markdown code blocks, extract JSON
-      const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) || responseText.match(/```\n?([\s\S]*?)\n?```/)
-      const jsonText = jsonMatch ? jsonMatch[1] : responseText
-      content = JSON.parse(jsonText)
-    } catch (parseError) {
-      // If JSON parsing fails, try to extract structured data from text
-      console.warn('Failed to parse JSON, attempting to extract data from text')
-      content = extractContentFromText(responseText)
-    }
-    
+    const content = parseAIResponse(responseText)
     return content as GeneratedContent
   } catch (error) {
     console.error('Error generating content:', error)
@@ -88,49 +76,119 @@ Format your response as JSON:
   }
 }
 
-// Helper function to extract content from non-JSON text responses
-function extractContentFromText(text: string): GeneratedContent {
-  // Basic extraction logic - you can enhance this
-  const lines = text.split('\n')
-  const content: any = {
-    hook: '',
-    script: '',
-    caption: '',
-    hashtags: [],
-    cta: '',
-    imagePrompts: []
+// Robust parser that handles all LLM response formats
+function parseAIResponse(text: string): GeneratedContent {
+  // Step 1: Strip markdown code fences if present
+  let cleaned = text
+    .replace(/^```json\s*/im, '')
+    .replace(/^```\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim()
+
+  // Step 2: Fix bad control characters inside JSON string values
+  // Replace literal newlines/tabs inside JSON strings with escaped versions
+  cleaned = sanitizeJsonString(cleaned)
+
+  // Step 3: Try JSON.parse
+  try {
+    const parsed = JSON.parse(cleaned)
+    return normalizeContent(parsed)
+  } catch (e) {
+    console.warn('JSON parse failed after sanitization, trying regex extraction. Error:', e)
   }
-  
-  let currentSection = ''
-  for (const line of lines) {
-    if (line.toLowerCase().includes('hook:')) {
-      currentSection = 'hook'
-      content.hook = line.split(':')[1]?.trim() || ''
-    } else if (line.toLowerCase().includes('script:')) {
-      currentSection = 'script'
-      content.script = line.split(':')[1]?.trim() || ''
-    } else if (line.toLowerCase().includes('caption:')) {
-      currentSection = 'caption'
-      content.caption = line.split(':')[1]?.trim() || ''
-    } else if (line.toLowerCase().includes('cta:')) {
-      currentSection = 'cta'
-      content.cta = line.split(':')[1]?.trim() || ''
-    } else if (line.trim().startsWith('#')) {
-      content.hashtags.push(line.trim())
-    } else if (currentSection && line.trim()) {
-      content[currentSection] += ' ' + line.trim()
+
+  // Step 4: Fallback - extract fields using regex directly from raw text
+  return extractWithRegex(text)
+}
+
+// Fix control characters that break JSON.parse
+function sanitizeJsonString(str: string): string {
+  // We need to replace literal newlines/tabs that appear INSIDE JSON string values
+  // Strategy: walk through and only replace control chars inside quoted strings
+  let result = ''
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i]
+
+    if (escaped) {
+      result += ch
+      escaped = false
+      continue
     }
+
+    if (ch === '\\' && inString) {
+      result += ch
+      escaped = true
+      continue
+    }
+
+    if (ch === '"') {
+      inString = !inString
+      result += ch
+      continue
+    }
+
+    if (inString) {
+      // Replace control characters with their escaped equivalents
+      if (ch === '\n') { result += '\\n'; continue }
+      if (ch === '\r') { result += '\\r'; continue }
+      if (ch === '\t') { result += '\\t'; continue }
+    }
+
+    result += ch
   }
-  
-  // Default image prompts if not found
-  if (content.imagePrompts.length === 0) {
-    content.imagePrompts = [
-      'Modern minimalist finance background with money symbols',
-      'Professional financial growth chart illustration'
-    ]
+
+  return result
+}
+
+// Normalize parsed object to ensure all fields exist
+function normalizeContent(parsed: any): GeneratedContent {
+  return {
+    hook: String(parsed.hook || ''),
+    script: String(parsed.script || ''),
+    caption: String(parsed.caption || ''),
+    hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String) : [],
+    cta: String(parsed.cta || ''),
+    imagePrompts: Array.isArray(parsed.imagePrompts)
+      ? parsed.imagePrompts.map(String)
+      : [
+          'Modern minimalist finance background with money symbols and growth charts',
+          'Professional financial illustration with coins and upward trending graph',
+        ],
   }
-  
-  return content
+}
+
+// Last resort: extract fields using regex from raw text
+function extractWithRegex(text: string): GeneratedContent {
+  const extract = (key: string): string => {
+    // Match "key": "value" or "key": "multi\nline\nvalue"
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'i')
+    const m = text.match(re)
+    return m ? m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : ''
+  }
+
+  const extractArray = (key: string): string[] => {
+    const re = new RegExp(`"${key}"\\s*:\\s*\\[([^\\]]+)\\]`, 'i')
+    const m = text.match(re)
+    if (!m) return []
+    return m[1].match(/"([^"]+)"/g)?.map(s => s.replace(/"/g, '')) || []
+  }
+
+  return {
+    hook: extract('hook'),
+    script: extract('script'),
+    caption: extract('caption'),
+    hashtags: extractArray('hashtags'),
+    cta: extract('cta'),
+    imagePrompts: extractArray('imagePrompts').length > 0
+      ? extractArray('imagePrompts')
+      : [
+          'Modern minimalist finance background with money symbols',
+          'Professional financial growth chart illustration',
+        ],
+  }
 }
 
 export async function generateImagePrompt(topic: string, style: string = 'modern minimalist'): Promise<string> {
