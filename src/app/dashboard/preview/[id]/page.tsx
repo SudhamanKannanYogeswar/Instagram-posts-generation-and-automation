@@ -6,45 +6,18 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Instagram,
-  ArrowLeft,
-  CheckCircle,
-  XCircle,
-  Calendar,
-  Copy,
-  Loader2,
-  Sparkles,
-  Hash,
-  MessageSquare,
-  Zap,
-  FileText,
-  Video,
-  Download,
-  Play
+  Instagram, ArrowLeft, CheckCircle, XCircle, Calendar,
+  Copy, Loader2, Sparkles, Hash, MessageSquare, Zap,
+  FileText, Video, Download, Play
 } from 'lucide-react'
 
 interface ContentData {
-  reel: {
-    id: string
-    status: string
-    created_at: string
-  }
+  reel: { id: string; status: string; created_at: string; video_url?: string }
   content: {
-    id: string
-    hook: string
-    script: string
-    caption: string
-    hashtags: string[]
-    cta: string
-    topic: string
-    tone: string
+    id: string; hook: string; script: string; caption: string
+    hashtags: string[]; cta: string; topic: string; tone: string
   }
-  images: Array<{
-    id: string
-    image_url: string
-    image_type: string
-    prompt?: string
-  }>
+  images: Array<{ id: string; image_url: string; image_type: string; prompt?: string }>
 }
 
 export default function PreviewPage() {
@@ -65,7 +38,6 @@ export default function PreviewPage() {
 
   useEffect(() => {
     fetchContent()
-    // Default schedule to 1 hour from now
     const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000)
     setScheduledTime(oneHourFromNow.toISOString().slice(0, 16))
   }, [reelId])
@@ -76,10 +48,7 @@ export default function PreviewPage() {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Failed to fetch content')
       setData(result.data)
-      // If video already exists, show it
-      if (result.data?.reel?.video_url) {
-        setVideoUrl(result.data.reel.video_url)
-      }
+      if (result.data?.reel?.video_url) setVideoUrl(result.data.reel.video_url)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -91,18 +60,9 @@ export default function PreviewPage() {
     setGeneratingVideo(true)
     setVideoError('')
     try {
-      const response = await fetch(`/api/content/${reelId}/generate-video`, {
-        method: 'POST',
-      })
+      const response = await fetch(`/api/content/${reelId}/generate-video`, { method: 'POST' })
       const result = await response.json()
-      if (!response.ok) {
-        if (result.error === 'ffmpeg_missing') {
-          setVideoError(`FFmpeg not installed. ${result.installGuide}`)
-        } else {
-          throw new Error(result.error || 'Video generation failed')
-        }
-        return
-      }
+      if (!response.ok) throw new Error(result.error || 'Video generation failed')
       setVideoUrl(result.data.videoUrl)
     } catch (err: any) {
       setVideoError(err.message)
@@ -133,9 +93,7 @@ export default function PreviewPage() {
     try {
       await fetch(`/api/content/${reelId}/reject`, { method: 'POST' })
       router.push('/dashboard')
-    } catch (err: any) {
-      setError(err.message)
-    }
+    } catch {}
   }
 
   const copyToClipboard = (text: string, label: string) => {
@@ -161,9 +119,7 @@ export default function PreviewPage() {
         <div className="text-center">
           <XCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
           <p className="text-lg font-medium text-gray-700 mb-4">{error || 'Content not found'}</p>
-          <Link href="/dashboard">
-            <Button>Back to Dashboard</Button>
-          </Link>
+          <Link href="/dashboard"><Button>Back to Dashboard</Button></Link>
         </div>
       </div>
     )
@@ -191,10 +147,10 @@ export default function PreviewPage() {
 
       <main className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Topic Badge */}
-        <div className="mb-6 flex items-center gap-3">
+        <div className="mb-6 flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
             <Sparkles className="w-4 h-4" />
-            Topic: {content.topic}
+            {content.topic}
           </div>
           <div className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-sm capitalize">
             {content.tone}
@@ -203,11 +159,11 @@ export default function PreviewPage() {
 
         <div className="grid lg:grid-cols-3 gap-6">
 
-          {/* Left: Content Preview */}
+          {/* ── Left: Content ── */}
           <div className="lg:col-span-2 space-y-4">
 
-            {/* Tab Navigation */}
-            <div className="flex gap-2 bg-white p-1 rounded-xl border">
+            {/* Tab Nav */}
+            <div className="flex gap-1 bg-white p-1 rounded-xl border">
               {[
                 { key: 'hook', label: 'Hook', icon: Zap },
                 { key: 'script', label: 'Script', icon: FileText },
@@ -217,10 +173,8 @@ export default function PreviewPage() {
                 <button
                   key={key}
                   onClick={() => setActiveTab(key as any)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === key
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeTab === key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -229,7 +183,7 @@ export default function PreviewPage() {
               ))}
             </div>
 
-            {/* Hook */}
+            {/* Hook Tab */}
             {activeTab === 'hook' && (
               <Card className="border-2 border-blue-200">
                 <CardHeader className="pb-3">
@@ -238,29 +192,21 @@ export default function PreviewPage() {
                       <Zap className="w-5 h-5 text-yellow-500" />
                       Viral Hook (First 3 seconds)
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(content.hook, 'hook')}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(content.hook, 'hook')}>
                       {copied === 'hook' ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                     </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border border-blue-100">
-                    <p className="text-xl font-bold text-gray-800 leading-relaxed">
-                      "{content.hook}"
-                    </p>
+                    <p className="text-xl font-bold text-gray-800 leading-relaxed">"{content.hook}"</p>
                   </div>
-                  <p className="text-xs text-gray-500 mt-3">
-                    💡 This hook is designed to stop the scroll in the first 3 seconds
-                  </p>
+                  <p className="text-xs text-gray-500 mt-3">💡 Designed to stop the scroll in the first 3 seconds</p>
                 </CardContent>
               </Card>
             )}
 
-            {/* Script */}
+            {/* Script Tab */}
             {activeTab === 'script' && (
               <Card>
                 <CardHeader className="pb-3">
@@ -269,20 +215,14 @@ export default function PreviewPage() {
                       <FileText className="w-5 h-5 text-blue-500" />
                       Full Script
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(content.script, 'script')}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(content.script, 'script')}>
                       {copied === 'script' ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                     </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="bg-gray-50 rounded-lg p-4 border">
-                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap text-sm">
-                      {content.script}
-                    </p>
+                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap text-sm">{content.script}</p>
                   </div>
                   <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
                     <p className="text-sm font-medium text-green-800">CTA: {content.cta}</p>
@@ -291,7 +231,7 @@ export default function PreviewPage() {
               </Card>
             )}
 
-            {/* Caption */}
+            {/* Caption Tab */}
             {activeTab === 'caption' && (
               <Card>
                 <CardHeader className="pb-3">
@@ -300,29 +240,21 @@ export default function PreviewPage() {
                       <MessageSquare className="w-5 h-5 text-purple-500" />
                       Instagram Caption
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(content.caption + '\n\n' + content.hashtags.join(' '), 'caption')}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(content.caption + '\n\n' + content.hashtags.join(' '), 'caption')}>
                       {copied === 'caption' ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                     </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="bg-gray-50 rounded-lg p-4 border">
-                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap text-sm">
-                      {content.caption}
-                    </p>
-                    <p className="text-blue-600 text-sm mt-3">
-                      {content.hashtags.join(' ')}
-                    </p>
+                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap text-sm">{content.caption}</p>
+                    <p className="text-blue-600 text-sm mt-3">{content.hashtags.join(' ')}</p>
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* Hashtags */}
+            {/* Hashtags Tab */}
             {activeTab === 'hashtags' && (
               <Card>
                 <CardHeader className="pb-3">
@@ -331,11 +263,7 @@ export default function PreviewPage() {
                       <Hash className="w-5 h-5 text-green-500" />
                       Hashtags ({content.hashtags.length})
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(content.hashtags.join(' '), 'hashtags')}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(content.hashtags.join(' '), 'hashtags')}>
                       {copied === 'hashtags' ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                     </Button>
                   </CardTitle>
@@ -343,10 +271,7 @@ export default function PreviewPage() {
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
                     {content.hashtags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium"
-                      >
+                      <span key={i} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
                         {tag.startsWith('#') ? tag : `#${tag}`}
                       </span>
                     ))}
@@ -355,15 +280,13 @@ export default function PreviewPage() {
               </Card>
             )}
 
-            {/* Generated Image Preview */}
+            {/* Generated Visuals */}
             {images && images.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span>🎨</span> Generated Visuals
-                    <span className="text-xs font-normal text-gray-500 ml-1">
-                      (Powered by NVIDIA FLUX.1)
-                    </span>
+                    🎨 Generated Visuals
+                    <span className="text-xs font-normal text-gray-500">(NVIDIA FLUX.1)</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -374,7 +297,7 @@ export default function PreviewPage() {
                           {img.image_url?.startsWith('data:') || img.image_url?.startsWith('http') ? (
                             <img
                               src={img.image_url}
-                              alt={`Generated visual ${i + 1}`}
+                              alt={`Visual ${i + 1}`}
                               className="w-full h-full object-cover"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src = 'https://placehold.co/1080x1920/1e40af/white?text=Finance+Visual'
@@ -386,7 +309,7 @@ export default function PreviewPage() {
                             </div>
                           )}
                         </div>
-                        <div className="absolute bottom-2 left-2 right-2">
+                        <div className="absolute bottom-2 left-2">
                           <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full capitalize">
                             {img.image_type}
                           </span>
@@ -412,69 +335,57 @@ export default function PreviewPage() {
               <CardContent>
                 {videoUrl ? (
                   <div className="space-y-3">
-                    <div className="aspect-[9/16] max-h-96 rounded-lg overflow-hidden bg-black mx-auto" style={{ maxWidth: 200 }}>
+                    <div
+                      className="aspect-[9/16] rounded-lg overflow-hidden bg-black mx-auto"
+                      style={{ maxWidth: 200 }}
+                    >
                       <video
                         src={videoUrl}
                         controls
                         className="w-full h-full object-contain"
-                        poster={data?.images?.[0]?.image_url}
                       />
                     </div>
                     <div className="flex gap-2">
                       <a href={videoUrl} download="reel.mp4" className="flex-1">
                         <Button variant="outline" className="w-full" size="sm">
-                          <Download className="w-4 h-4 mr-2" /> Download Video
+                          <Download className="w-4 h-4 mr-2" /> Download
                         </Button>
                       </a>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleGenerateVideo}
-                        disabled={generatingVideo}
-                      >
+                      <Button variant="ghost" size="sm" onClick={handleGenerateVideo} disabled={generatingVideo}>
                         <Sparkles className="w-4 h-4 mr-1" /> Regenerate
                       </Button>
                     </div>
                   </div>
                 ) : (
                   <div className="text-center py-6">
-                    {videoError ? (
+                    {videoError && (
                       <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
                         <p className="text-sm text-red-700 font-medium mb-1">Video generation failed</p>
                         <p className="text-xs text-red-600">{videoError}</p>
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 mb-4">
-                        Generate a complete Reel video with your content, images, and text overlays
-                      </p>
                     )}
+                    <p className="text-sm text-gray-500 mb-4">
+                      Assemble a complete Reel video — all server-side, nothing to install.
+                    </p>
                     <Button
                       onClick={handleGenerateVideo}
                       disabled={generatingVideo}
                       className="bg-purple-600 hover:bg-purple-700"
                     >
                       {generatingVideo ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Generating Video... (~30s)
-                        </>
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating Video... (~30s)</>
                       ) : (
-                        <>
-                          <Play className="w-4 h-4 mr-2" />
-                          Generate Reel Video
-                        </>
+                        <><Play className="w-4 h-4 mr-2" /> Generate Reel Video</>
                       )}
                     </Button>
-                    <p className="text-xs text-gray-400 mt-3">
-                      Requires FFmpeg installed on your machine
-                    </p>
                   </div>
                 )}
               </CardContent>
             </Card>
-          </div>
 
-          {/* Right: Actions Panel */}
+          </div>{/* end left col */}
+
+          {/* ── Right: Actions ── */}
           <div className="space-y-4">
 
             {/* Approve / Reject */}
@@ -483,7 +394,6 @@ export default function PreviewPage() {
                 <CardTitle className="text-base">Ready to Post?</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Schedule Time */}
                 <div>
                   <label className="block text-sm font-medium mb-2">
                     <Calendar className="w-4 h-4 inline mr-1" />
@@ -508,11 +418,10 @@ export default function PreviewPage() {
                   disabled={approving}
                   className="w-full bg-green-600 hover:bg-green-700"
                 >
-                  {approving ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Approving...</>
-                  ) : (
-                    <><CheckCircle className="w-4 h-4 mr-2" /> Approve & Schedule</>
-                  )}
+                  {approving
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Approving...</>
+                    : <><CheckCircle className="w-4 h-4 mr-2" /> Approve & Schedule</>
+                  }
                 </Button>
 
                 <Button
@@ -520,20 +429,18 @@ export default function PreviewPage() {
                   variant="outline"
                   className="w-full border-red-200 text-red-600 hover:bg-red-50"
                 >
-                  <XCircle className="w-4 h-4 mr-2" />
-                  Reject & Discard
+                  <XCircle className="w-4 h-4 mr-2" /> Reject & Discard
                 </Button>
 
                 <Link href="/dashboard/create">
                   <Button variant="ghost" className="w-full">
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate New Version
+                    <Sparkles className="w-4 h-4 mr-2" /> Generate New Version
                   </Button>
                 </Link>
               </CardContent>
             </Card>
 
-            {/* Quick Stats */}
+            {/* Content Stats */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Content Stats</CardTitle>
@@ -558,20 +465,22 @@ export default function PreviewPage() {
               </CardContent>
             </Card>
 
-            {/* Tips */}
+            {/* Pro Tips */}
             <Card className="bg-amber-50 border-amber-200">
               <CardContent className="pt-4">
                 <p className="text-sm text-amber-800 font-medium mb-2">💡 Pro Tips</p>
                 <ul className="text-xs text-amber-700 space-y-1">
-                  <li>• Post between 6-9 PM for best reach</li>
+                  <li>• Post between 6–9 PM for best reach</li>
                   <li>• Respond to comments in first hour</li>
                   <li>• Use all hashtags for max visibility</li>
                   <li>• Pin the best comment</li>
                 </ul>
               </CardContent>
             </Card>
-          </div>
-        </div>
+
+          </div>{/* end right col */}
+
+        </div>{/* end grid */}
       </main>
     </div>
   )

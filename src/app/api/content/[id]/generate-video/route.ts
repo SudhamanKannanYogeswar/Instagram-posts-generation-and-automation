@@ -104,16 +104,6 @@ export async function POST(
     })
   } catch (error: any) {
     console.error('Video generation error:', error)
-
-    // Check if it's an ffmpeg missing error
-    if (error.message?.includes('ffmpeg') || error.code === 'ENOENT') {
-      return NextResponse.json({
-        error: 'ffmpeg_missing',
-        message: 'FFmpeg is not installed. Please install it to generate videos.',
-        installGuide: 'Windows: choco install ffmpeg | Mac: brew install ffmpeg | Linux: sudo apt install ffmpeg',
-      }, { status: 422 })
-    }
-
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

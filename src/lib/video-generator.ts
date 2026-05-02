@@ -10,6 +10,8 @@ import * as path from 'path'
 import * as os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+// ffmpeg-static bundles FFmpeg as an npm package — no local install needed
+import ffmpegBin from 'ffmpeg-static'
 
 const execFileAsync = promisify(execFile)
 
@@ -132,24 +134,18 @@ async function composeFrame(
     .toFile(outputPath)
 }
 
-/** Find ffmpeg binary */
+/** Get ffmpeg binary path — uses bundled ffmpeg-static, no local install needed */
 async function findFfmpeg(): Promise<string> {
-  const candidates = [
-    'ffmpeg',
-    // Windows WinGet install path
-    `${process.env.LOCALAPPDATA}\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe`,
-    'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
-    'C:\\ffmpeg\\bin\\ffmpeg.exe',
-    '/usr/bin/ffmpeg',
-    '/usr/local/bin/ffmpeg',
-  ]
-  for (const p of candidates) {
-    try {
-      await execFileAsync(p, ['-version'])
-      return p
-    } catch {}
-  }
-  throw new Error('ffmpeg not found. Install it: Windows: winget install Gyan.FFmpeg | Mac: brew install ffmpeg | Linux: sudo apt install ffmpeg')
+  // ffmpeg-static ships a pre-built binary inside node_modules
+  if (ffmpegBin) return ffmpegBin
+
+  // Fallback: try system ffmpeg (for local dev convenience)
+  try {
+    await execFileAsync('ffmpeg', ['-version'])
+    return 'ffmpeg'
+  } catch {}
+
+  throw new Error('FFmpeg binary not found. This should not happen — please reinstall dependencies with: npm install')
 }
 
 /** Main: generate all frames then assemble into MP4 */
