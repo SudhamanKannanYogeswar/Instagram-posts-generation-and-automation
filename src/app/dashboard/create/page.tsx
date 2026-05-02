@@ -34,6 +34,8 @@ function CreateReelForm() {
   // Instagram link state
   const [instagramUrl, setInstagramUrl] = useState('')
   const [instagramAnalysis, setInstagramAnalysis] = useState<any>(null)
+  const [instagramOriginalPost, setInstagramOriginalPost] = useState<any>(null)
+  const [instagramFetchedReal, setInstagramFetchedReal] = useState(false)
   const [instagramPrompt, setInstagramPrompt] = useState('')
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,8 +108,13 @@ function CreateReelForm() {
       if (!response.ok) throw new Error(data.error)
 
       setInstagramAnalysis(data.analysis)
-      if (data.analysis.suggestedTopic) {
-        setTopic(data.analysis.suggestedTopic)
+      setInstagramFetchedReal(data.fetchedRealData || false)
+      setInstagramOriginalPost(data.originalPost || null)
+
+      // Use hookIdea as the topic seed if available, otherwise suggestedTopic
+      const topicSeed = data.analysis.hookIdea || data.analysis.suggestedTopic
+      if (topicSeed) {
+        setTopic(topicSeed)
         setTone(data.analysis.recommendedTone || 'educational')
       }
     } catch (err: any) {
@@ -406,19 +413,37 @@ function CreateReelForm() {
                 )}
 
                 {instagramAnalysis && (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-2">
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-2 text-purple-700 font-medium">
                       <CheckCircle className="w-4 h-4" />
-                      Content Concept Ready!
+                      {instagramFetchedReal ? '✅ Real post data fetched & analysed!' : 'Content Concept Ready'}
                     </div>
-                    <div className="text-sm space-y-1">
+
+                    {/* Show real post data if fetched */}
+                    {instagramOriginalPost && (
+                      <div className="bg-white rounded-lg p-3 border border-purple-100 text-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Original Post</p>
+                        <p className="text-gray-700 font-medium">@{instagramOriginalPost.author}</p>
+                        <p className="text-gray-600 text-xs mt-1 line-clamp-3 italic">
+                          "{instagramOriginalPost.caption}"
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="text-sm space-y-1.5">
+                      {instagramAnalysis.originalStyle && instagramFetchedReal && (
+                        <div>
+                          <span className="text-gray-500">Original style:</span>
+                          <span className="ml-1 text-gray-800">{instagramAnalysis.originalStyle}</span>
+                        </div>
+                      )}
                       <div>
-                        <span className="text-gray-500">Angle:</span>
+                        <span className="text-gray-500">Finance angle:</span>
                         <span className="ml-1 text-gray-800">{instagramAnalysis.contentAngle}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Target:</span>
-                        <span className="ml-1 text-gray-800">{instagramAnalysis.targetAudience}</span>
+                        <span className="text-gray-500">Hook idea:</span>
+                        <span className="ml-1 text-gray-800 font-medium">"{instagramAnalysis.hookIdea}"</span>
                       </div>
                       <div>
                         <span className="text-gray-500">What makes it unique:</span>
