@@ -1,7 +1,7 @@
 /**
- * Server-side video generation using sharp (image compositing) + ffmpeg
+ * Server-side video generation using sharp + ffmpeg-static
  * Creates Instagram Reels (9:16, 1080x1920) from images + text overlays
- * sharp has prebuilt Windows binaries - no Visual Studio needed
+ * No local installs needed — everything bundled via npm
  */
 
 import sharp from 'sharp'
@@ -10,7 +10,6 @@ import * as path from 'path'
 import * as os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-// ffmpeg-static bundles FFmpeg as an npm package — no local install needed
 import ffmpegBin from 'ffmpeg-static'
 
 const execFileAsync = promisify(execFile)
@@ -33,7 +32,7 @@ export interface VideoResult {
   durationSeconds: number
 }
 
-/** Download or decode an image URL into a Buffer */
+/** Decode a data URL or fetch a remote URL into a Buffer */
 async function fetchImageBuffer(url: string): Promise<Buffer> {
   if (url.startsWith('data:')) {
     const base64 = url.split(',')[1]
@@ -44,36 +43,23 @@ async function fetchImageBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer())
 }
 
-/** Build an SVG text overlay for a given message */
-function buildTextSvg(
-  lines: string[],
-  fontSize: number,
-  color: string,
-  bgColor: string,
-  yCenter: number
-): Buffer {
-  const lineHeight = fontSize * 1.4
-  const totalH = lines.length * lineHeight + 40
-  const startY = yCenter - totalH / 2
-
-  const rects = lines.map((line, i) => {
-    const approxW = Math.min(line.length * fontSize * 0.55 + 60, WIDTH - 80)
-    const x = (WIDTH - approxW) / 2
-    const y = startY + i * lineHeight
-    return `<rect x="${x}" y="${y}" width="${approxW}" height="${fontSize + 24}" rx="12" fill="${bgColor}" />`
-  }).join('\n')
-
-  const texts = lines.map((line, i) => {
-    const y = startY + i * lineHeight + fontSize
-    return `<text x="${WIDTH / 2}" y="${y}" font-family="Arial, sans-serif" font-weight="bold" font-size="${fontSize}" fill="${color}" text-anchor="middle">${escapeXml(line)}</text>`
-  }).join('\n')
-
-  return Buffer.from(`
-    <svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-      ${rects}
-      ${texts}
-    </svg>
-  `)
+/** Wrap text into lines of at most maxChars characters */
+function wrapText(text: string, maxChars = 30): string[] {
+  if (!text) return []
+  const words = text.split(' ')
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word
+    if (test.length > maxChars && current) {
+      lines.push(current)
+      current = word
+    } else {
+      current = test
+    }
+  }
+  if (current) lines.push(current)
+  return lines
 }
 
 function escapeXml(str: string): string {
@@ -85,117 +71,142 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;')
 }
 
-/** Wrap text into lines that fit within maxChars per line */
-function wrapText(text: string, maxChars = 32): string[] {
-  const words = text.split(' ')
-  const lines: string[] = []
-  let current = ''
-  for (const word of words) {
-    if ((current + ' ' + word).trim().length > maxChars && current) {
-      lines.push(current.trim())
-      current = word
-    } else {
-      current = current ? current + ' ' + word : word
-    }
-  }
-  if (current) lines.push(current.trim())
-  return lines
-}
-
-/** Compose a single frame: background image + dark overlay + text */
-async function composeFrame(
+/**
+ * Build a complete frame as JPEG buffer.
+ * Uses the source image as background, adds a semi-transparent dark overlay,
+ * then renders text via SVG compositing — all with sharp (no canvas needed).
+ */
+async function buildFrame(
   bgBuffer: Buffer,
-  textLines: string[],
-  fontSize: number,
-  textColor: string,
-  bgColor: string,
-  yCenter: number,
-  outputPath: string
-): Promise<void> {
-  // Resize background to 1080x1920
+  lines: string[],
+  opts: {
+    fontSize: number
+    textColor: string
+    yPercent: number   // 0–1, vertical center of text block
+    emoji?: string
+  }
+): Promise<Buffer> {
+  const { fontSize, textColor, yPercent, emoji } = opts
+
+  // 1. Resize background to exact reel dimensions
   const bg = await sharp(bgBuffer)
     .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'center' })
     .toBuffer()
 
-  // Dark overlay
-  const overlay = await sharp({
-    create: { width: WIDTH, height: HEIGHT, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.5 } },
-  }).png().toBuffer()
+  // 2. Build SVG with text overlay (sharp handles SVG compositing natively)
+  const lineHeight = fontSize * 1.45
+  const safeLines = lines.slice(0, 6) // max 6 lines
+  const blockH = safeLines.length * lineHeight + 40
+  const blockY = HEIGHT * yPercent - blockH / 2
 
-  // Text SVG
-  const textSvg = buildTextSvg(textLines, fontSize, textColor, bgColor, yCenter)
+  const textElements = safeLines.map((line, i) => {
+    const y = blockY + i * lineHeight + fontSize
+    const approxW = Math.min(line.length * fontSize * 0.58 + 60, WIDTH - 80)
+    const rx = (WIDTH - approxW) / 2
+    const ry = blockY + i * lineHeight - 4
+    return `
+      <rect x="${rx}" y="${ry}" width="${approxW}" height="${fontSize + 20}" rx="10"
+        fill="rgba(0,0,0,0.62)"/>
+      <text x="${WIDTH / 2}" y="${y}"
+        font-family="Arial, Helvetica, sans-serif"
+        font-weight="bold"
+        font-size="${fontSize}"
+        fill="${textColor}"
+        text-anchor="middle">${escapeXml(line)}</text>`
+  }).join('\n')
 
-  await sharp(bg)
-    .composite([
-      { input: overlay, blend: 'over' },
-      { input: textSvg, blend: 'over' },
-    ])
-    .jpeg({ quality: 90 })
-    .toFile(outputPath)
+  const emojiEl = emoji
+    ? `<text x="${WIDTH / 2}" y="${blockY - 20}"
+        font-size="${fontSize * 1.4}"
+        text-anchor="middle"
+        dominant-baseline="auto">${emoji}</text>`
+    : ''
+
+  const svg = Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+    <!-- dark overlay -->
+    <rect width="${WIDTH}" height="${HEIGHT}" fill="rgba(0,0,0,0.42)"/>
+    ${emojiEl}
+    ${textElements}
+  </svg>`)
+
+  // 3. Composite SVG over background
+  return sharp(bg)
+    .composite([{ input: svg, blend: 'over' }])
+    .jpeg({ quality: 88 })
+    .toBuffer()
 }
 
-/** Get ffmpeg binary path — uses bundled ffmpeg-static, no local install needed */
-async function findFfmpeg(): Promise<string> {
-  // ffmpeg-static ships a pre-built binary inside node_modules
+/** Get the bundled ffmpeg binary path */
+function getFfmpeg(): string {
   if (ffmpegBin) return ffmpegBin
-
-  // Fallback: try system ffmpeg (for local dev convenience)
-  try {
-    await execFileAsync('ffmpeg', ['-version'])
-    return 'ffmpeg'
-  } catch {}
-
-  throw new Error('FFmpeg binary not found. This should not happen — please reinstall dependencies with: npm install')
+  throw new Error('ffmpeg-static binary not found. Run: npm install')
 }
 
-/** Main: generate all frames then assemble into MP4 */
+/** Split text into n roughly equal chunks by sentence */
+function splitIntoChunks(text: string, n: number): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text]
+  const size = Math.ceil(sentences.length / n)
+  return Array.from({ length: n }, (_, i) =>
+    sentences.slice(i * size, (i + 1) * size).join(' ').trim()
+  )
+}
+
+/**
+ * Generate a complete Reel video.
+ * Returns paths to the MP4 and thumbnail JPEG in the OS temp directory.
+ */
 export async function generateReelVideo(params: VideoGenerationParams): Promise<VideoResult> {
   const { contentId, hook, script, cta, imageUrls, durationSeconds = 30 } = params
 
   const tmpDir = path.join(os.tmpdir(), `reel_${contentId}_${Date.now()}`)
   fs.mkdirSync(tmpDir, { recursive: true })
 
-  // Fetch background images
-  const bgBuffer = imageUrls[0]
-    ? await fetchImageBuffer(imageUrls[0]).catch(() => null)
-    : null
-
-  const overlayBuffer = imageUrls[1]
-    ? await fetchImageBuffer(imageUrls[1]).catch(() => null)
-    : bgBuffer
-
-  // Fallback gradient if no images
-  const fallbackBg = await sharp({
+  // --- Load background images ---
+  const fallback = await sharp({
     create: { width: WIDTH, height: HEIGHT, channels: 3, background: { r: 15, g: 12, b: 41 } },
   }).jpeg().toBuffer()
 
-  const bg1 = bgBuffer || fallbackBg
-  const bg2 = overlayBuffer || fallbackBg
+  const bg1 = imageUrls[0]
+    ? await fetchImageBuffer(imageUrls[0]).catch(() => fallback)
+    : fallback
 
-  // Split script into 3 parts
+  const bg2 = imageUrls[1]
+    ? await fetchImageBuffer(imageUrls[1]).catch(() => bg1)
+    : bg1
+
+  // --- Build frames ---
   const scriptParts = splitIntoChunks(script, 3)
 
-  // Define frames: [bgBuffer, textLines, fontSize, textColor, bgColor, yCenter]
-  type FrameDef = [Buffer, string[], number, string, string, number]
-  const frameDefs: FrameDef[] = [
-    // Frame 1: Hook (4s)
-    [bg1, ['💰', ...wrapText(hook, 28)], 72, '#FFFFFF', 'rgba(0,0,0,0.65)', HEIGHT * 0.42],
-    [bg1, ['👇 Watch till the end'], 52, '#FFD700', 'rgba(0,0,0,0.5)', HEIGHT * 0.62],
-    // Frame 2-4: Script parts
-    [bg2, wrapText(scriptParts[0] || '', 30), 56, '#FFFFFF', 'rgba(0,0,0,0.6)', HEIGHT * 0.5],
-    [bg2, wrapText(scriptParts[1] || '', 30), 56, '#FFFFFF', 'rgba(0,0,0,0.6)', HEIGHT * 0.5],
-    [bg2, wrapText(scriptParts[2] || '', 30), 56, '#FFFFFF', 'rgba(0,0,0,0.6)', HEIGHT * 0.5],
-    // Frame 5: CTA
-    [bg1, ['✅', ...wrapText(cta, 28)], 64, '#00FF88', 'rgba(0,0,0,0.65)', HEIGHT * 0.42],
-    [bg1, ['❤️ Like & Follow for more!'], 52, '#FFD700', 'rgba(0,0,0,0.5)', HEIGHT * 0.62],
+  const frameConfigs: Array<{ bg: Buffer; lines: string[]; fontSize: number; color: string; yPct: number; emoji?: string }> = [
+    // Hook frame
+    { bg: bg1, lines: wrapText(hook, 26), fontSize: 68, color: '#FFFFFF', yPct: 0.44, emoji: '💰' },
+    // Watch till end
+    { bg: bg1, lines: ['👇 Watch till the end'], fontSize: 52, color: '#FFD700', yPct: 0.62 },
+    // Script part 1
+    { bg: bg2, lines: wrapText(scriptParts[0] || '', 28), fontSize: 54, color: '#FFFFFF', yPct: 0.50 },
+    // Script part 2
+    { bg: bg2, lines: wrapText(scriptParts[1] || '', 28), fontSize: 54, color: '#FFFFFF', yPct: 0.50 },
+    // Script part 3
+    { bg: bg2, lines: wrapText(scriptParts[2] || '', 28), fontSize: 54, color: '#FFFFFF', yPct: 0.50 },
+    // CTA frame
+    { bg: bg1, lines: wrapText(cta, 26), fontSize: 60, color: '#00FF88', yPct: 0.44, emoji: '✅' },
+    // Follow frame
+    { bg: bg1, lines: ['❤️ Like & Follow for more!'], fontSize: 52, color: '#FFD700', yPct: 0.62 },
   ]
 
-  // Render all frames
   const framePaths: string[] = []
-  for (let i = 0; i < frameDefs.length; i++) {
-    const [bg, lines, fontSize, color, bgColor, yCenter] = frameDefs[i]
+  for (let i = 0; i < frameConfigs.length; i++) {
+    const cfg = frameConfigs[i]
     const framePath = path.join(tmpDir, `frame_${String(i).padStart(3, '0')}.jpg`)
-    await composeFrame(bg, lines, fontSize, color, bgColor, yCenter, framePath)
+
+    const frameBuffer = await buildFrame(cfg.bg, cfg.lines, {
+      fontSize: cfg.fontSize,
+      textColor: cfg.color,
+      yPercent: cfg.yPct,
+      emoji: cfg.emoji,
+    })
+
+    fs.writeFileSync(framePath, frameBuffer)
     framePaths.push(framePath)
   }
 
@@ -203,25 +214,25 @@ export async function generateReelVideo(params: VideoGenerationParams): Promise<
   const thumbnailPath = path.join(tmpDir, 'thumbnail.jpg')
   fs.copyFileSync(framePaths[0], thumbnailPath)
 
-  // Build ffmpeg concat file (each frame shown for equal duration)
+  // --- Build ffmpeg concat list ---
   const secPerFrame = durationSeconds / framePaths.length
-  const concatFile = path.join(tmpDir, 'concat.txt')
-  const concatContent = framePaths
-    .map(f => `file '${f.replace(/\\/g, '/')}'\nduration ${secPerFrame.toFixed(2)}`)
-    .join('\n')
-  // ffmpeg needs last file repeated without duration
   const lastFrame = framePaths[framePaths.length - 1]
-  fs.writeFileSync(concatFile, concatContent + `\nfile '${lastFrame.replace(/\\/g, '/')}'`)
+  const concatContent =
+    framePaths.map(f => `file '${f.replace(/\\/g, '/')}'\nduration ${secPerFrame.toFixed(2)}`).join('\n') +
+    `\nfile '${lastFrame.replace(/\\/g, '/')}'`
 
-  // Assemble video
+  const concatFile = path.join(tmpDir, 'concat.txt')
+  fs.writeFileSync(concatFile, concatContent)
+
+  // --- Assemble MP4 ---
   const videoPath = path.join(tmpDir, 'reel.mp4')
-  const ffmpeg = await findFfmpeg()
+  const ffmpeg = getFfmpeg()
 
   await execFileAsync(ffmpeg, [
     '-f', 'concat',
     '-safe', '0',
     '-i', concatFile,
-    '-vf', `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1`,
+    '-vf', `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`,
     '-c:v', 'libx264',
     '-preset', 'fast',
     '-crf', '23',
@@ -233,15 +244,4 @@ export async function generateReelVideo(params: VideoGenerationParams): Promise<
   ])
 
   return { videoPath, thumbnailPath, durationSeconds }
-}
-
-function splitIntoChunks(text: string, n: number): string[] {
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text]
-  const size = Math.ceil(sentences.length / n)
-  const chunks: string[] = []
-  for (let i = 0; i < n; i++) {
-    const chunk = sentences.slice(i * size, (i + 1) * size).join(' ').trim()
-    chunks.push(chunk || '')
-  }
-  return chunks
 }

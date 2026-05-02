@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: userId || null,
         generation_mode: generationMode,
-        input_topic: topic,
+        input_topic: topic.substring(0, 250),
         status: 'generating',
       })
       .select()
@@ -34,7 +34,8 @@ export async function POST(request: NextRequest) {
       includeStats: true,
     })
 
-    // 3. Save generated content
+    // 3. Save generated content — truncate topic to 250 chars to fit VARCHAR(255)
+    const safeTopic = topic.substring(0, 250)
     const { data: content, error: contentError } = await supabaseAdmin
       .from('generated_content')
       .insert({
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
         caption: generatedContent.caption,
         hashtags: generatedContent.hashtags,
         cta: generatedContent.cta,
-        topic,
+        topic: safeTopic,
         tone: tone || 'educational',
       })
       .select()
@@ -53,7 +54,9 @@ export async function POST(request: NextRequest) {
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
     // 4. Generate images server-side (no external API needed)
-    const imageUrls = await generateReelImages(topic, 2)
+    // Use the original short topic for image generation (not the enriched one)
+    const shortTopic = topic.substring(0, 80)
+    const imageUrls = await generateReelImages(shortTopic, 2)
 
     const imageResults = await Promise.allSettled(
       imageUrls.map(async (imageUrl, index) => {
