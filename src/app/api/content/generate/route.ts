@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { generateFinanceContent, generateImage } from '@/lib/openai'
+import { generateFinanceContent } from '@/lib/openai'
+import { generateReelImages } from '@/lib/image-generator'
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,30 +52,25 @@ export async function POST(request: NextRequest) {
 
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
-    // 4. Generate images using NVIDIA FLUX.1-schnell
-    // Build finance-specific prompts from the content
-    const imagePrompts = buildImagePrompts(topic, generatedContent.imagePrompts)
+    // 4. Generate images server-side (no external API needed)
+    const imageUrls = await generateReelImages(topic, 2)
 
     const imageResults = await Promise.allSettled(
-      imagePrompts.map(async (prompt, index) => {
-        const imageUrl = await generateImage(prompt)
+      imageUrls.map(async (imageUrl, index) => {
         const imageType = index === 0 ? 'background' : 'overlay'
-
-        // Store image record (URL is either base64 data URL or placeholder)
         const { data: imgRecord } = await supabaseAdmin
           .from('generated_images')
           .insert({
             content_id: content.id,
             image_url: imageUrl,
             storage_path: `generated/${content.id}/image_${index}.jpg`,
-            prompt,
+            prompt: `Finance visual ${index + 1} for: ${topic}`,
             image_type: imageType,
-            width: 1024,
-            height: 1024,
+            width: 1080,
+            height: 1920,
           })
           .select()
           .single()
-
         return imgRecord
       })
     )
@@ -111,21 +107,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// Build rich, finance-specific image prompts
-function buildImagePrompts(topic: string, aiPrompts: string[]): string[] {
-  const financeStyles = [
-    `Professional finance Instagram Reel background about "${topic}". Modern dark blue gradient, gold accents, floating coins, upward trending chart lines, clean minimalist design, 9:16 vertical format, no text`,
-    `Vibrant finance content visual for "${topic}". Abstract money symbols, green growth arrows, dollar signs, wealth visualization, modern gradient background, Instagram Reels format, photorealistic, no text`,
-  ]
-
-  // Use AI-generated prompts if available, otherwise use our finance-specific ones
-  const prompts = aiPrompts && aiPrompts.length >= 2
-    ? aiPrompts.map((p, i) =>
-        `${p}, professional finance Instagram content, modern design, vibrant colors, ${i === 0 ? 'dark background' : 'light background'}, no text overlay, high quality`
-      )
-    : financeStyles
-
-  return prompts.slice(0, 2)
 }
