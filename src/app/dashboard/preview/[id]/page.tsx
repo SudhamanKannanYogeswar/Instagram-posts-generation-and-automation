@@ -285,41 +285,45 @@ export default function PreviewPage() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    🎨 Generated Visuals
-                    <span className="text-xs font-normal text-gray-500">(NVIDIA FLUX.1)</span>
+                    🖼️ Generated Images
+                    <span className="text-xs font-normal text-gray-500">(black + white text cards)</span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  {/* Combined image — featured prominently */}
+                  {images.find((img: any) => img.image_type === 'combined') && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                        Combined Card (Hook + Content)
+                      </p>
+                      <div className="aspect-[9/16] rounded-xl overflow-hidden border-2 border-blue-400 max-w-[240px] mx-auto">
+                        <img
+                          src={images.find((img: any) => img.image_type === 'combined')?.image_url}
+                          alt="Combined card"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {/* Individual cards side by side */}
                   <div className="grid grid-cols-2 gap-3">
-                    {images.map((img, i) => (
-                      <div key={i} className="relative group">
-                        <div className="aspect-[9/16] rounded-lg overflow-hidden bg-gray-100 border-2 border-gray-200 hover:border-blue-400 transition-colors">
-                          {img.image_url?.startsWith('data:') || img.image_url?.startsWith('http') ? (
+                    {images
+                      .filter((img: any) => img.image_type !== 'combined')
+                      .map((img: any, i: number) => (
+                        <div key={i}>
+                          <p className="text-xs font-medium text-gray-500 mb-1.5 capitalize">
+                            {img.image_type === 'background' ? 'Hook Card' : 'Content Card'}
+                          </p>
+                          <div className="aspect-[9/16] rounded-lg overflow-hidden border border-gray-200">
                             <img
                               src={img.image_url}
-                              alt={`Visual ${i + 1}`}
+                              alt={img.image_type}
                               className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://placehold.co/1080x1920/1e40af/white?text=Finance+Visual'
-                              }}
                             />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
-                              <p className="text-white text-xs text-center px-2 opacity-70">{img.prompt}</p>
-                            </div>
-                          )}
+                          </div>
                         </div>
-                        <div className="absolute bottom-2 left-2">
-                          <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full capitalize">
-                            {img.image_type}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
-                  <p className="text-xs text-gray-500 mt-3 text-center">
-                    These visuals will be used as backgrounds in your Reel video
-                  </p>
                 </CardContent>
               </Card>
             )}

@@ -1,63 +1,75 @@
 /**
- * Finance image generator
- * Pure black background, white text, left-aligned
- * Exactly like the reference images — story format, no emojis
+ * Finance image generator — pure canvas, no SVG, no AI
+ *
+ * Uses @napi-rs/canvas to draw directly:
+ * - Pure black background
+ * - White text, left-aligned
+ * - No XML, no special character issues
+ * - Works with any text including Rs., ->, ---, etc.
+ *
+ * Produces:
+ *   Image 1 (hook)    — hook text card
+ *   Image 2 (content) — content/script card
+ *   Image 3 (combined)— hook on top half, content on bottom half (single image)
  */
 
-import sharp from 'sharp'
+import { createCanvas, SKRSContext2D } from '@napi-rs/canvas'
 
 const W = 1080
 const H = 1920
-const PADDING_L = 80   // left margin
-const PADDING_R = 80   // right margin
-const PADDING_T = 120  // top margin
-const TEXT_W = W - PADDING_L - PADDING_R  // 920px usable width
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Text utilities ────────────────────────────────────────────────────────────
 
-/** Strip emojis and escape XML special chars */
-function clean(s: string): string {
-  return s
+/** Remove emojis and normalise special characters */
+function sanitise(text: string): string {
+  return text
+    // Normalise escaped newlines from JSON
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '')
     // Remove emoji ranges
     .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
     .replace(/[\u{2600}-\u{27BF}]/gu, '')
     .replace(/[\u{FE00}-\u{FEFF}]/gu, '')
-    // Replace curly quotes with straight quotes
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    // Replace em/en dashes with hyphens
-    .replace(/[\u2013\u2014]/g, '-')
-    // Replace arrows
-    .replace(/\u2192/g, '->')
-    .replace(/\u2190/g, '<-')
-    // Replace rupee symbol with Rs.
-    .replace(/\u20B9/g, 'Rs.')
-    // Replace other common special chars
-    .replace(/\u2022/g, '*')
-    .replace(/\u25C6/g, '*')
-    .replace(/\u2714/g, '*')
-    // XML escape — MUST be last and in this order
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-    .trim()
+    // Normalise common special chars to ASCII equivalents
+    .replace(/[\u2018\u2019]/g, "'")   // curly single quotes
+    .replace(/[\u201C\u201D]/g, '"')   // curly double quotes
+    .replace(/[\u2013\u2014]/g, '-')   // en/em dash
+    .replace(/\u2192/g, '->')          // right arrow
+    .replace(/\u2190/g, '<-')          // left arrow
+    .replace(/\u20B9/g, 'Rs.')         // rupee sign
+    .replace(/\u2022/g, '-')           // bullet
+    .replace(/\u25C6/g, '-')           // diamond
+    .replace(/\u2714/g, '-')           // checkmark
+    .replace(/\u00A0/g, ' ')           // non-breaking space
 }
 
-/**
- * Word-wrap a single line to fit within TEXT_W at given fontSize.
- * Uses approximate char width = fontSize * 0.54 for Arial.
- */
-function wrapText(text: string, fontSize: number): string[] {
-  const maxChars = Math.floor(TEXT_W / (fontSize * 0.54))
+/** Parse raw text into paragraphs (array of line arrays) */
+function parseParagraphs(raw: string): string[][] {
+  const normalised = sanitise(raw)
+  return normalised
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(p => p.length > 0)
+    .map(p =>
+      p.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0)
+    )
+}
+
+/** Word-wrap a single line to fit within maxWidth pixels */
+function wrapLine(
+  ctx: SKRSContext2D,
+  text: string,
+  maxWidth: number
+): string[] {
   const words = text.split(' ')
   const lines: string[] = []
   let cur = ''
 
   for (const word of words) {
     const test = cur ? `${cur} ${word}` : word
-    if (test.length > maxChars && cur) {
+    if (ctx.measureText(test).width > maxWidth && cur) {
       lines.push(cur)
       cur = word
     } else {
@@ -68,152 +80,186 @@ function wrapText(text: string, fontSize: number): string[] {
   return lines.length > 0 ? lines : ['']
 }
 
-/**
- * Parse raw text into paragraphs.
- * Handles both literal \n (from JSON) and actual newlines.
- */
-function parseParagraphs(raw: string): string[][] {
-  // Normalise: replace escaped \n with real newline
-  const normalised = raw
-    .replace(/\\n/g, '\n')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
+// ── Core renderer ─────────────────────────────────────────────────────────────
 
-  // Split into paragraphs on blank lines
-  const paragraphs = normalised
-    .split(/\n{2,}/)
-    .map(p => p.trim())
-    .filter(p => p.length > 0)
-
-  // Each paragraph is an array of lines
-  return paragraphs.map(p =>
-    p.split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 0)
-  )
+interface RenderOptions {
+  fontSize?: number
+  paddingLeft?: number
+  paddingTop?: number
+  paddingRight?: number
+  lineHeightMultiplier?: number
+  paraGapMultiplier?: number
 }
 
-// ── SVG builder ───────────────────────────────────────────────────────────────
-
 /**
- * Build a pure black SVG text card.
- * Renders paragraphs with spacing between them, exactly like the reference images.
+ * Render text onto a canvas context.
+ * Returns the Y position after the last line (useful for combined images).
  */
-function buildSvg(rawText: string, baseFontSize: number): Buffer {
+function renderText(
+  ctx: SKRSContext2D,
+  rawText: string,
+  startY: number,
+  canvasHeight: number,
+  opts: RenderOptions = {}
+): number {
+  const {
+    fontSize = 62,
+    paddingLeft = 80,
+    paddingTop = 0,
+    paddingRight = 80,
+    lineHeightMultiplier = 1.65,
+    paraGapMultiplier = 1.1,
+  } = opts
+
+  const maxTextW = W - paddingLeft - paddingRight
   const paragraphs = parseParagraphs(rawText)
 
-  // First pass: calculate total height to check if we need to scale down
-  function calcHeight(fs: number): number {
-    const lineH = fs * 1.6
-    const paraGap = fs * 1.2
-    let h = PADDING_T
+  // Calculate total height to auto-scale font
+  function calcTotalHeight(fs: number): number {
+    const lh = fs * lineHeightMultiplier
+    const pg = fs * paraGapMultiplier
+    let h = startY + paddingTop
 
     for (let pi = 0; pi < paragraphs.length; pi++) {
+      ctx.font = `${fs}px Arial`
       for (const line of paragraphs[pi]) {
-        const wrapped = wrapText(line, fs)
-        h += wrapped.length * lineH
+        const wrapped = wrapLine(ctx, line, maxTextW)
+        h += wrapped.length * lh
       }
-      if (pi < paragraphs.length - 1) h += paraGap
+      if (pi < paragraphs.length - 1) h += pg
     }
-    h += PADDING_T
     return h
   }
 
-  // Scale font down if content overflows
-  let fs = baseFontSize
-  while (calcHeight(fs) > H - 40 && fs > 36) {
+  // Scale down font if content overflows
+  let fs = fontSize
+  while (calcTotalHeight(fs) > canvasHeight - 80 && fs > 32) {
     fs -= 2
   }
 
-  const lineH = fs * 1.6
-  const paraGap = fs * 1.2
+  const lh = fs * lineHeightMultiplier
+  const pg = fs * paraGapMultiplier
 
-  // Second pass: build SVG text elements
-  const elements: string[] = []
-  let curY = PADDING_T + fs
+  ctx.font = `${fs}px Arial`
+  ctx.fillStyle = 'white'
+  ctx.textBaseline = 'top'
+
+  let curY = startY + paddingTop
 
   for (let pi = 0; pi < paragraphs.length; pi++) {
     for (const line of paragraphs[pi]) {
-      const wrapped = wrapText(line, fs)
+      ctx.font = `${fs}px Arial`
+      const wrapped = wrapLine(ctx, line, maxTextW)
       for (const wl of wrapped) {
-        const cleaned = clean(wl)
-        if (cleaned) {
-          elements.push(
-            `<text x="${PADDING_L}" y="${Math.round(curY)}"` +
-            ` font-family="Arial, Helvetica, sans-serif"` +
-            ` font-size="${fs}"` +
-            ` font-weight="400"` +
-            ` fill="white"` +
-            ` dominant-baseline="auto"` +
-            `>${cleaned}</text>`
-          )
-        }
-        curY += lineH
+        ctx.fillText(wl, paddingLeft, curY)
+        curY += lh
       }
     }
     if (pi < paragraphs.length - 1) {
-      curY += paraGap
+      curY += pg
     }
   }
 
-  // Strip any remaining non-ASCII characters that could break SVG XML
-  const svgString = (
-    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
-    `<rect width="${W}" height="${H}" fill="#000000"/>` +
-    elements.join('') +
-    `</svg>`
-  ).replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\uD7FF\uE000-\uFFFD]/g, '')
-
-  return Buffer.from(svgString)
+  return curY
 }
 
-// ── Render image ──────────────────────────────────────────────────────────────
+// ── Image generators ──────────────────────────────────────────────────────────
 
-async function renderCard(rawText: string, fontSize: number): Promise<string> {
-  try {
-    const svg = buildSvg(rawText, fontSize)
-
-    const buf = await sharp({
-      create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    })
-      .composite([{ input: svg, blend: 'over' }])
-      .jpeg({ quality: 95 })
-      .toBuffer()
-
-    return `data:image/jpeg;base64,${buf.toString('base64')}`
-  } catch (err: any) {
-    console.error('renderCard error:', err.message)
-    // Fallback: plain black image with minimal safe text
-    const safeTopic = rawText.substring(0, 30).replace(/[^a-zA-Z0-9 .]/g, '')
-    const fallbackSvg = Buffer.from(
-      `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
-      `<rect width="${W}" height="${H}" fill="#000000"/>` +
-      `<text x="${PADDING_L}" y="200" font-family="Arial" font-size="60" fill="white">${safeTopic}</text>` +
-      `</svg>`
-    )
-    const buf = await sharp({
-      create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    })
-      .composite([{ input: fallbackSvg, blend: 'over' }])
-      .jpeg({ quality: 95 })
-      .toBuffer()
-    return `data:image/jpeg;base64,${buf.toString('base64')}`
-  }
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
+/** Generate hook image card — black bg, white text */
 export async function generateHookImage(hookImageText: string): Promise<string> {
-  return renderCard(hookImageText, 68)
+  const canvas = createCanvas(W, H)
+  const ctx = canvas.getContext('2d')
+
+  // Black background
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, W, H)
+
+  // Render text
+  renderText(ctx, hookImageText, 0, H, {
+    fontSize: 68,
+    paddingLeft: 80,
+    paddingTop: 120,
+    paddingRight: 80,
+  })
+
+  const buf = await canvas.encode('jpeg', 95)
+  return `data:image/jpeg;base64,${buf.toString('base64')}`
 }
 
+/** Generate content image card — black bg, white text */
 export async function generateContentImage(contentImageText: string): Promise<string> {
-  return renderCard(contentImageText, 60)
+  const canvas = createCanvas(W, H)
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, W, H)
+
+  renderText(ctx, contentImageText, 0, H, {
+    fontSize: 60,
+    paddingLeft: 80,
+    paddingTop: 120,
+    paddingRight: 80,
+  })
+
+  const buf = await canvas.encode('jpeg', 95)
+  return `data:image/jpeg;base64,${buf.toString('base64')}`
 }
 
 /**
- * Generate both reel images in parallel.
- * Returns [hookImage, contentImage]
+ * Generate a COMBINED image:
+ * Top half = hook text
+ * Thin white divider line
+ * Bottom half = content text
+ *
+ * This is the single image that can be used as the reel visual.
+ */
+export async function generateCombinedImage(
+  hookImageText: string,
+  contentImageText: string
+): Promise<string> {
+  const canvas = createCanvas(W, H)
+  const ctx = canvas.getContext('2d')
+
+  // Black background
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, W, H)
+
+  const HALF = H / 2
+  const DIVIDER_Y = HALF - 1
+
+  // ── Top half: hook ──
+  renderText(ctx, hookImageText, 0, HALF, {
+    fontSize: 64,
+    paddingLeft: 80,
+    paddingTop: 100,
+    paddingRight: 80,
+  })
+
+  // ── Divider line ──
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(80, DIVIDER_Y)
+  ctx.lineTo(W - 80, DIVIDER_Y)
+  ctx.stroke()
+
+  // ── Bottom half: content ──
+  renderText(ctx, contentImageText, HALF, H, {
+    fontSize: 54,
+    paddingLeft: 80,
+    paddingTop: 60,
+    paddingRight: 80,
+  })
+
+  const buf = await canvas.encode('jpeg', 95)
+  return `data:image/jpeg;base64,${buf.toString('base64')}`
+}
+
+/**
+ * Generate all 3 images for a reel:
+ * [0] Hook image
+ * [1] Content image
+ * [2] Combined image (hook + content in one)
  */
 export async function generateReelImages(
   topic: string,
@@ -223,12 +269,13 @@ export async function generateReelImages(
   const hookText = hookImageText || topic
   const contentText = contentImageText || topic
 
-  const [img1, img2] = await Promise.all([
+  const [img1, img2, img3] = await Promise.all([
     generateHookImage(hookText),
     generateContentImage(contentText),
+    generateCombinedImage(hookText, contentText),
   ])
 
-  return [img1, img2]
+  return [img1, img2, img3]
 }
 
 // Backward compat

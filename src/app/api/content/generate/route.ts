@@ -53,8 +53,7 @@ export async function POST(request: NextRequest) {
 
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
-    // 4. Generate images — Image 1: hook card, Image 2: content card
-    // Use the LLM-generated image text (formatted for the card style)
+    // 4. Generate images — 3 cards: hook, content, combined
     const shortTopic = topic.substring(0, 80)
     const imageUrls = await generateReelImages(
       shortTopic,
@@ -62,17 +61,17 @@ export async function POST(request: NextRequest) {
       generatedContent.contentImageText || generatedContent.script
     )
 
+    const imageTypes = ['hook', 'content', 'combined']
     const imageResults = await Promise.allSettled(
       imageUrls.map(async (imageUrl, index) => {
-        const imageType = index === 0 ? 'background' : 'overlay'
         const { data: imgRecord } = await supabaseAdmin
           .from('generated_images')
           .insert({
             content_id: content.id,
             image_url: imageUrl,
             storage_path: `generated/${content.id}/image_${index}.jpg`,
-            prompt: `Finance visual ${index + 1} for: ${topic}`,
-            image_type: imageType,
+            prompt: imageTypes[index],
+            image_type: index === 0 ? 'background' : index === 1 ? 'overlay' : 'combined',
             width: 1080,
             height: 1920,
           })
