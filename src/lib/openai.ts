@@ -43,57 +43,107 @@ You always include a COMPARISON between two people or two choices — this is th
 You write like a storyteller, not a teacher.
 Tone: ${tone}`
 
-  // Inject randomness so numbers vary every generation
-  const seed = {
-    age1: 24 + Math.floor(Math.random() * 6),        // 24-29
-    age2: 30 + Math.floor(Math.random() * 8),        // 30-37
-    salary: [45000, 52000, 58000, 65000, 72000, 80000][Math.floor(Math.random() * 6)],
-    sipAmount: [3000, 5000, 7500, 8000, 10000, 12000][Math.floor(Math.random() * 6)],
-    years: [15, 18, 20, 22, 25][Math.floor(Math.random() * 5)],
-    cagr1: [11, 12, 13, 14, 15][Math.floor(Math.random() * 5)],
-    cagr2: [5, 6, 7][Math.floor(Math.random() * 3)],
-    investment1: ['HDFC Flexi Cap Fund', 'Mirae Asset Large Cap', 'Parag Parikh Flexi Cap', 'Axis Bluechip Fund', 'SBI Small Cap Fund'][Math.floor(Math.random() * 5)],
-    investment2: ['FD', 'RD', 'LIC endowment plan', 'Post Office MIS', 'savings account'][Math.floor(Math.random() * 5)],
-    names: [['Rahul', 'Arjun'], ['Priya', 'Meera'], ['Karthik', 'Vikram'], ['Ananya', 'Sneha'], ['Rohan', 'Amit']][Math.floor(Math.random() * 5)],
+  // Step 1: Ask the LLM to generate a fresh, realistic scenario first
+  // This gives far more variety than hardcoded lists
+  const scenarioPrompt = `Generate a realistic Indian finance scenario for a viral Instagram Reel about: ${topic}
+
+Pick values that feel REAL and RELATABLE to Indian audience. No fixed ranges — use your judgment.
+Examples of variety:
+- Could be a doctor earning Rs.3L/month or a teacher earning Rs.35,000/month
+- Could be Rs.2,000 SIP or Rs.50,000 SIP
+- Could be 10 years or 30 years
+- Could be crores or lakhs depending on the scenario
+- Names should be diverse Indian names — not just common ones
+
+Return ONLY valid JSON (no markdown):
+{
+  "name1": "first Indian name",
+  "name2": "second Indian name (different region/community from name1)",
+  "age": number between 22 and 45,
+  "profession1": "profession for name1",
+  "profession2": "profession for name2",
+  "monthlySalary": number in rupees (realistic for the profession),
+  "monthlyInvestment": number in rupees (realistic portion of salary),
+  "years": number between 10 and 30,
+  "investment1": "smart investment choice (specific fund name or instrument)",
+  "investment2": "poor/average investment choice",
+  "cagr1": number between 10 and 18,
+  "cagr2": number between 4 and 8,
+  "moralLine": "one short powerful moral/lesson line for the end of the post"
+}`
+
+  let scenario: any
+  try {
+    const scenarioCompletion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'meta/llama-3.3-70b-instruct',
+      messages: [{ role: 'user', content: scenarioPrompt }],
+      temperature: 0.9,  // high temperature for maximum variety
+      max_tokens: 400,
+    })
+    const raw = scenarioCompletion.choices[0].message.content || '{}'
+    const cleaned = raw.replace(/^```json\s*/im, '').replace(/^```\s*/im, '').replace(/\s*```\s*$/im, '').trim()
+    scenario = JSON.parse(cleaned)
+  } catch {
+    // Fallback scenario if LLM fails
+    scenario = {
+      name1: 'Arjun', name2: 'Deepak',
+      age: 28, profession1: 'Software Engineer', profession2: 'Bank Manager',
+      monthlySalary: 85000, monthlyInvestment: 10000,
+      years: 20, investment1: 'Parag Parikh Flexi Cap Fund', investment2: 'FD',
+      cagr1: 13, cagr2: 6,
+      moralLine: 'The best time to invest was yesterday. The second best time is today.',
+    }
+  }
+
+  // Calculate exact corpus values
+  const r1 = scenario.cagr1 / 100 / 12
+  const r2 = scenario.cagr2 / 100 / 12
+  const n  = scenario.years * 12
+  const P  = scenario.monthlyInvestment
+  const corpus1 = Math.round(P * ((Math.pow(1 + r1, n) - 1) / r1))
+  const corpus2 = Math.round(P * ((Math.pow(1 + r2, n) - 1) / r2))
+  const gap = corpus1 - corpus2
+
+  const formatRs = (n: number) => {
+    if (n >= 10000000) return `Rs.${(n/10000000).toFixed(2)} crore`
+    if (n >= 100000)   return `Rs.${(n/100000).toFixed(1)} lakh`
+    return `Rs.${n.toLocaleString('en-IN')}`
   }
 
   const userPrompt = `Create a viral Instagram Reel for Indian audience about: ${topic}
 
-RANDOMIZED SCENARIO (use these EXACT values — do not change them):
-- Names: ${seed.names[0]} and ${seed.names[1]}
-- Age: ${seed.age1} years old
-- Monthly salary: Rs.${seed.salary.toLocaleString('en-IN')}
-- Monthly investment amount: Rs.${seed.sipAmount.toLocaleString('en-IN')}
-- Time period: ${seed.years} years
-- Investment 1 (smart choice): ${seed.investment1} at ${seed.cagr1}% CAGR
-- Investment 2 (poor choice): ${seed.investment2} at ${seed.cagr2}% returns
-- Calculate the EXACT corpus for both using compound interest formula
+USE THIS EXACT SCENARIO (already calculated — do not change numbers):
+- Name 1: ${scenario.name1} (${scenario.profession1})
+- Name 2: ${scenario.name2} (${scenario.profession2})
+- Age: ${scenario.age} years old
+- Monthly salary: ${formatRs(scenario.monthlySalary)}
+- Monthly investment: ${formatRs(P)}
+- Time period: ${scenario.years} years
+- ${scenario.name1}'s choice: ${scenario.investment1} at ${scenario.cagr1}% CAGR → corpus = ${formatRs(corpus1)}
+- ${scenario.name2}'s choice: ${scenario.investment2} at ${scenario.cagr2}% returns → corpus = ${formatRs(corpus2)}
+- Gap: ${formatRs(gap)}
+- Moral line: "${scenario.moralLine}"
 
-CONTENT QUALITY RULES:
-1. Calculate EXACT corpus values using: P * ((1+r)^n - 1) / r where r = monthly rate
-   - Smart choice corpus = Rs.${seed.sipAmount} * ((1+${seed.cagr1/100}/12)^${seed.years*12} - 1) / (${seed.cagr1/100}/12)
-   - Poor choice corpus = Rs.${seed.sipAmount} * ${seed.years * 12} * (1 + ${seed.cagr2/100}/2) [approximate for FD/RD]
-2. Show the EXACT rupee difference — not approximate
-3. Include WHY the difference happens (compounding, inflation, real returns)
-4. Reference real Indian context: salary credit day, EMI, Diwali bonus
-5. End with a question that makes them think about their own money
-6. NO generic advice — every line must have specific data
-
-FORMAT: Short punchy lines. Blank lines between sections. NO emojis. NO paragraphs.
-
-${includeStats ? 'Include: inflation rate (6%), real returns after inflation, tax implications where relevant.' : ''}
+CONTENT RULES:
+1. Use EXACT numbers above — do not recalculate or change them
+2. Show WHY the difference happens (compounding, inflation, real returns)
+3. Reference real Indian life: salary credit day, EMI, Diwali bonus, office canteen
+4. End EVERY image card with the moral line: "${scenario.moralLine}"
+5. NO generic advice — every line must have specific data from the scenario above
+6. Short punchy lines. Blank lines between sections. NO emojis. NO paragraphs.
+${includeStats ? '7. Include inflation rate (6%), real returns after inflation.' : ''}
 
 Return as JSON:
 {
-  "hook": "one powerful hook using the exact names and scenario",
-  "script": "full script with exact calculated numbers, short punchy lines, blank lines between sections",
+  "hook": "one powerful hook using ${scenario.name1} and ${scenario.name2}",
+  "script": "full script with exact numbers, short punchy lines, blank lines between sections, ends with moral line",
   "caption": "Instagram caption with emojis",
   "hashtags": ["tag1", "tag2", "tag3"],
   "cta": "call to action",
-  "hookImageText": "VERSION 1 story hook — ${seed.names[0]}'s journey, specific numbers, NO emojis, blank lines between sections",
-  "contentImageText": "VERSION 1 content — exact corpus breakdown, real returns, inflation impact, NO emojis, blank lines between points",
-  "comparisonHookText": "VERSION 2 comparison hook — ${seed.names[0]} vs ${seed.names[1]}, same Rs.${seed.sipAmount.toLocaleString('en-IN')}/month, different choice, NO emojis, blank lines",
-  "comparisonContentText": "VERSION 2 comparison content — exact calculated corpus for both, the gap in Rs., WHY it happened, NO emojis, blank lines"
+  "hookImageText": "VERSION 1 story hook — ${scenario.name1}'s journey, specific numbers, NO emojis, blank lines, ends with moral line",
+  "contentImageText": "VERSION 1 content — exact corpus breakdown, real returns, inflation impact, NO emojis, blank lines, ends with moral line",
+  "comparisonHookText": "VERSION 2 comparison hook — ${scenario.name1} vs ${scenario.name2}, same ${formatRs(P)}/month, different choice, NO emojis, blank lines",
+  "comparisonContentText": "VERSION 2 comparison content — ${formatRs(corpus1)} vs ${formatRs(corpus2)}, gap of ${formatRs(gap)}, WHY it happened, NO emojis, blank lines, ends with moral line"
 }`
 
   try {

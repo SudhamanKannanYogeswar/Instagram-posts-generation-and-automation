@@ -69,20 +69,79 @@ export async function POST(request: NextRequest) {
       finalImageUrl = imageUrl!
     }
 
-    // Randomise scenario values so output is never the same
-    const seed = {
-      age1: 24 + Math.floor(Math.random() * 6),
-      age2: 30 + Math.floor(Math.random() * 8),
-      salary: [45000, 52000, 58000, 65000, 72000, 80000][Math.floor(Math.random() * 6)],
-      sipAmount: [3000, 5000, 7500, 8000, 10000, 12000][Math.floor(Math.random() * 6)],
-      years: [15, 18, 20, 22, 25][Math.floor(Math.random() * 5)],
-      names: [['Rahul', 'Arjun'], ['Priya', 'Meera'], ['Karthik', 'Vikram'], ['Ananya', 'Sneha'], ['Rohan', 'Amit']][Math.floor(Math.random() * 5)],
+    // Let the LLM generate a fresh scenario — no hardcoded lists
+    // This gives maximum variety: any name, any salary, any investment
+    const scenarioPrompt = `Generate a realistic Indian finance scenario for a viral Instagram Reel.
+The scenario should be inspired by the image content but with DIFFERENT values.
+
+Pick values that feel REAL. No fixed ranges — use your judgment.
+Names should be diverse Indian names from different regions/communities.
+Salary can be anything from Rs.25,000 to Rs.5 lakh/month.
+Investment can be anything from Rs.1,000 to Rs.1 lakh/month.
+Could involve crores if the scenario calls for it.
+
+Return ONLY valid JSON:
+{
+  "name1": "first Indian name",
+  "name2": "second Indian name (different region from name1)",
+  "age": number,
+  "profession1": "profession",
+  "profession2": "profession",
+  "monthlySalary": number,
+  "monthlyInvestment": number,
+  "years": number,
+  "investment1": "smart investment (specific fund/instrument name)",
+  "investment2": "poor/average investment",
+  "cagr1": number,
+  "cagr2": number,
+  "moralLine": "one short powerful moral lesson for the end"
+}`
+
+    let scenario: any
+    try {
+      const scenarioRes = await fetch(VISION_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${VISION_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          model: 'meta/llama-3.3-70b-instruct',
+          messages: [{ role: 'user', content: scenarioPrompt }],
+          max_tokens: 300, temperature: 0.9, stream: false,
+        }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const sData = await scenarioRes.json()
+      const sRaw = sData?.choices?.[0]?.message?.content || '{}'
+      const sCleaned = sRaw.replace(/^```json\s*/im, '').replace(/^```\s*/im, '').replace(/\s*```\s*$/im, '').trim()
+      scenario = JSON.parse(sCleaned)
+    } catch {
+      scenario = {
+        name1: 'Arjun', name2: 'Deepak', age: 28,
+        profession1: 'Software Engineer', profession2: 'Bank Manager',
+        monthlySalary: 85000, monthlyInvestment: 10000,
+        years: 20, investment1: 'Parag Parikh Flexi Cap Fund', investment2: 'FD',
+        cagr1: 13, cagr2: 6,
+        moralLine: 'The best time to invest was yesterday. The second best time is today.',
+      }
     }
 
-    // Two-step prompt:
-    // Step 1: Extract EXACTLY what is in the image (instruments, numbers, format, structure)
-    // Step 2: Create a SIMILAR post with slightly different numbers/names but same style
+    // Calculate exact corpus
+    const r1 = scenario.cagr1 / 100 / 12
+    const r2 = scenario.cagr2 / 100 / 12
+    const n  = scenario.years * 12
+    const P  = scenario.monthlyInvestment
+    const corpus1 = Math.round(P * ((Math.pow(1 + r1, n) - 1) / r1))
+    const corpus2 = Math.round(P * ((Math.pow(1 + r2, n) - 1) / r2))
+    const gap = corpus1 - corpus2
+
+    const fmtRs = (v: number) => {
+      if (v >= 10000000) return `Rs.${(v/10000000).toFixed(2)} crore`
+      if (v >= 100000)   return `Rs.${(v/100000).toFixed(1)} lakh`
+      return `Rs.${v.toLocaleString('en-IN')}`
+    }
+
     const prompt = `You are an expert ${category.label} content creator for Indian Instagram.
+
+${category.systemPrompt}
 
 STEP 1 — READ THE IMAGE CAREFULLY:
 Extract EXACTLY what is written in this image:
@@ -93,41 +152,43 @@ Extract EXACTLY what is written in this image:
 - What is the HOOK or opening line?
 - What is the KEY MESSAGE or conclusion?
 
-STEP 2 — CREATE A SIMILAR POST:
-Now create a NEW post that:
-1. Uses the SAME FORMAT and STRUCTURE as the image
-2. Uses the SAME TYPE of financial instruments (if image shows SIP vs FD, your post also compares SIP vs FD or similar)
-3. Uses DIFFERENT but realistic numbers: age ${seed.age1}, salary Rs.${seed.salary.toLocaleString('en-IN')}, amount Rs.${seed.sipAmount.toLocaleString('en-IN')}/month, ${seed.years} years
-4. Uses names: ${seed.names[0]} and ${seed.names[1]}
-5. Has a DIFFERENT ANGLE or TWIST than the original — not a copy
-6. Is MORE DETAILED and SPECIFIC than the original
-7. Calculates EXACT corpus values using compound interest
-
-${userHint ? `User's specific request: "${userHint}"` : ''}
+STEP 2 — CREATE A SIMILAR POST using this EXACT scenario:
+- Name 1: ${scenario.name1} (${scenario.profession1})
+- Name 2: ${scenario.name2} (${scenario.profession2})
+- Age: ${scenario.age} years old
+- Monthly salary: ${fmtRs(scenario.monthlySalary)}
+- Monthly investment: ${fmtRs(P)}
+- Time period: ${scenario.years} years
+- ${scenario.name1}'s choice: ${scenario.investment1} at ${scenario.cagr1}% CAGR -> ${fmtRs(corpus1)}
+- ${scenario.name2}'s choice: ${scenario.investment2} at ${scenario.cagr2}% -> ${fmtRs(corpus2)}
+- Gap: ${fmtRs(gap)}
+- Moral line (end every card with this): "${scenario.moralLine}"
 
 RULES:
-- Short punchy lines. NO paragraphs. Blank lines between sections.
-- NO emojis in script or image text.
-- Use Rs. for rupees.
-- Every number must be calculated correctly.
+1. Use the SAME FORMAT and STRUCTURE as the image
+2. Use the SAME TYPE of financial instruments shown in the image
+3. Use the EXACT numbers from the scenario above
+4. End EVERY image card with the moral line
+5. Short punchy lines. Blank lines between sections. NO emojis.
+${userHint ? `User's specific request: "${userHint}"` : ''}
 
 Return ONLY valid JSON:
 {
-  "imageReading": "what you extracted from the image — instruments, numbers, format, structure",
+  "imageReading": "what you extracted from the image",
   "subject": "what is in the image",
   "contentAngle": "the new angle you are taking",
   "suggestedTopic": "specific topic for this reel",
   "recommendedTone": "educational|motivational|urgent|casual",
   "hook": "one powerful hook line",
-  "script": "full script matching the image format, short punchy lines, blank lines between sections",
+  "script": "full script matching image format, short punchy lines, blank lines, ends with moral line",
   "caption": "Instagram caption with emojis",
   "hashtags": ["tag1", "tag2", "tag3"],
   "cta": "call to action",
-  "hookImageText": "hook card — same format as image, ${seed.names[0]} and ${seed.names[1]}, specific numbers, NO emojis, blank lines",
-  "contentImageText": "content card — same structure as image, exact calculated numbers, NO emojis, blank lines",
-  "comparisonHookText": "comparison hook — ${seed.names[0]} vs ${seed.names[1]}, same starting point, NO emojis",
-  "comparisonContentText": "comparison content — exact corpus for both, the gap, WHY it happened, NO emojis",
-  "contentIdeas": ["variation 1 with different instruments", "variation 2 with different time period", "variation 3 with different scenario"]
+  "hookImageText": "hook card — same format as image, ${scenario.name1} and ${scenario.name2}, NO emojis, blank lines, ends with moral line",
+  "contentImageText": "content card — same structure as image, exact numbers, NO emojis, blank lines, ends with moral line",
+  "comparisonHookText": "comparison hook — ${scenario.name1} vs ${scenario.name2}, same ${fmtRs(P)}/month, NO emojis",
+  "comparisonContentText": "comparison content — ${fmtRs(corpus1)} vs ${fmtRs(corpus2)}, gap ${fmtRs(gap)}, WHY, NO emojis, ends with moral line",
+  "contentIdeas": ["variation 1", "variation 2", "variation 3"]
 }`
 
     const controller = new AbortController()
@@ -184,7 +245,7 @@ Return ONLY valid JSON:
       analysis = JSON.parse(result)
     } catch {
       console.warn('Vision JSON parse failed')
-      analysis = buildFallback(category.label, userHint, seed)
+      analysis = buildFallback(category.label, userHint, scenario)
     }
 
     return NextResponse.json({ success: true, analysis, model: VISION_MODEL })
