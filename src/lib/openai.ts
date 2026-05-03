@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { getCategoryById, DEFAULT_CATEGORY } from './categories'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -10,6 +11,7 @@ export interface ContentGenerationParams {
   tone?: 'educational' | 'motivational' | 'urgent' | 'casual'
   targetAudience?: string
   includeStats?: boolean
+  categoryId?: string
 }
 
 export interface GeneratedContent {
@@ -26,27 +28,27 @@ export interface GeneratedContent {
 export async function generateFinanceContent(
   params: ContentGenerationParams
 ): Promise<GeneratedContent> {
-  const { topic, tone = 'educational', includeStats = true } = params
+  const { topic, tone = 'educational', includeStats = true, categoryId } = params
 
-  const systemPrompt = `You are an expert Indian finance content creator who writes viral Instagram Reels scripts.
-
-CRITICAL RULES:
-- Write ONLY in short, punchy lines — never long paragraphs
-- Each line should be 1 sentence or less
-- Use blank lines between sections for breathing room
-- Use real Indian numbers: Rs.500, Rs.10,000, Rs.2L, Rs.1 Cr
-- Reference real Indian things: SIP, FD, PPF, Zerodha, Groww, HDFC, SBI, Nifty, CAGR
-- Write like you are telling a story to a friend
-- NO emojis anywhere in the script or image text
-- Tone: ${tone}`
+  // Get category-specific system prompt
+  const category = getCategoryById(categoryId || 'personal_finance') || DEFAULT_CATEGORY
+  const systemPrompt = category.systemPrompt + `\nTone: ${tone}`
 
   const userPrompt = `Create a viral Instagram Reel for Indian audience about: ${topic}
 
-SCRIPT FORMAT — write exactly like this style:
-Short line.
+CRITICAL FORMAT RULES:
+- Write ONLY in short, punchy lines. NEVER write paragraphs.
+- Each line = 1 thought. Max 10 words per line.
+- Use blank lines between sections.
+- NO emojis anywhere.
+- Use Rs. for rupees (not the symbol).
+${includeStats ? '- Include real Indian statistics and numbers.' : ''}
+
+SCRIPT FORMAT — write exactly like this:
+Short punchy line.
 Another short line.
 
-New thought starts here.
+New thought.
 Keep it punchy.
 
 Use real numbers.
@@ -56,50 +58,30 @@ End with a question or insight.
 
 ---
 
-IMAGE TEXT FORMAT — look at these examples carefully and match the style exactly:
+HOOK IMAGE TEXT — story that stops the scroll:
+Write a relatable real-life scenario.
+Short lines. Like a story unfolding.
+Make the reader feel "this is me".
+Use real numbers and situations.
+End with a cliffhanger or shocking fact.
 
-HOOK IMAGE EXAMPLE (for a topic about SIP):
-"You earn Rs.80,000/month.
-You spend Rs.79,000.
-You save Rs.1,000.
-
-You think that's not enough to invest.
-
-But your colleague started Rs.1,000 SIP at 25.
-He is 40 now.
-His SIP is worth Rs.9.2 lakh.
-
-You are still waiting for the right time."
-
-CONTENT IMAGE EXAMPLE (for a topic about SIP):
-"Rs.1,000 SIP started at age 25
-
-At 12% CAGR for 15 years = Rs.9.2 lakh
-
-Same Rs.1,000 started at age 35
-
-At 12% CAGR for 5 years = Rs.81,000
-
-Difference: Rs.8.4 lakh
-
-Just because of 10 years.
-
-Time is the real investment.
-Not the amount."
+CONTENT IMAGE TEXT — the valuable content:
+The actual insight, data, or steps.
+Structured clearly.
+Use numbers, percentages, comparisons.
+End with a takeaway or question.
 
 ---
 
-Now generate for the topic: ${topic}
-
-Return as JSON with these exact fields:
+Return as JSON:
 {
   "hook": "one line hook sentence",
-  "script": "the full script in short punchy lines with blank lines between sections — NO paragraphs",
+  "script": "full script in short punchy lines with blank lines between sections",
   "caption": "Instagram caption with emojis",
   "hashtags": ["tag1", "tag2"],
   "cta": "call to action",
-  "hookImageText": "the hook image text — short punchy lines, story format, NO emojis, blank lines between sections, use Rs. for rupees",
-  "contentImageText": "the content image text — data/facts/steps format, NO emojis, blank lines between points, use Rs. for rupees"
+  "hookImageText": "hook image text - short punchy story lines, NO emojis, blank lines between sections",
+  "contentImageText": "content image text - data/facts/steps, NO emojis, blank lines between points"
 }`
 
   try {

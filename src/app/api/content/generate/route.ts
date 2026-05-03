@@ -6,7 +6,7 @@ import { generateReelImages } from '@/lib/image-generator'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { topic, tone, userId, generationMode = 'manual' } = body
+    const { topic, tone, userId, generationMode = 'manual', categoryId, preGeneratedContent } = body
 
     if (!topic) {
       return NextResponse.json({ error: 'Topic is required' }, { status: 400 })
@@ -26,13 +26,19 @@ export async function POST(request: NextRequest) {
 
     if (requestError) throw new Error('Failed to create content request: ' + requestError.message)
 
-    // 2. Generate text content via NVIDIA Llama
-    const generatedContent = await generateFinanceContent({
-      topic,
-      tone: tone || 'educational',
-      targetAudience: 'young professionals',
-      includeStats: true,
-    })
+    // 2. Use pre-generated content (from image analysis) OR generate via LLM
+    let generatedContent: any
+    if (preGeneratedContent && preGeneratedContent.hook) {
+      // Image analysis already generated full content — use it directly
+      generatedContent = preGeneratedContent
+    } else {
+      generatedContent = await generateFinanceContent({
+        topic,
+        tone: tone || 'educational',
+        includeStats: true,
+        categoryId: categoryId || 'personal_finance',
+      })
+    }
 
     // 3. Save generated content — truncate topic to 250 chars to fit VARCHAR(255)
     const safeTopic = topic.substring(0, 250)

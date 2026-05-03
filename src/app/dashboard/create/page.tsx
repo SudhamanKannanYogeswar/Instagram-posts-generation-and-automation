@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Instagram, ArrowLeft, Sparkles, Loader2, Upload,
-  Link2, FileText, Image, X, CheckCircle, AlertCircle
+  Link2, FileText, Image, X, CheckCircle, AlertCircle, ChevronDown
 } from 'lucide-react'
+import { CATEGORIES } from '@/lib/categories'
 
 type InputMode = 'prompt' | 'image' | 'instagram'
 
@@ -18,6 +19,8 @@ function CreateReelForm() {
   const defaultMode = (searchParams.get('mode') as InputMode) || 'prompt'
 
   const [inputMode, setInputMode] = useState<InputMode>(defaultMode)
+  const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0])
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [topic, setTopic] = useState('')
   const [tone, setTone] = useState('educational')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -41,21 +44,11 @@ function CreateReelForm() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    if (!file.type.startsWith('image/')) {
-      setError('Please upload an image file')
-      return
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Image must be under 10MB')
-      return
-    }
-
+    if (!file.type.startsWith('image/')) { setError('Please upload an image file'); return }
+    if (file.size > 10 * 1024 * 1024) { setError('Image must be under 10MB'); return }
     setUploadedImage(file)
     setImageAnalysis(null)
     setError('')
-
     const reader = new FileReader()
     reader.onload = (e) => setImagePreview(e.target?.result as string)
     reader.readAsDataURL(file)
@@ -65,26 +58,20 @@ function CreateReelForm() {
     if (!uploadedImage) return
     setIsAnalyzing(true)
     setError('')
-
     try {
       const formData = new FormData()
       formData.append('image', uploadedImage)
+      formData.append('categoryId', selectedCategory.id)
       if (imagePrompt) formData.append('prompt', imagePrompt)
 
-      const response = await fetch('/api/analyze-image', {
-        method: 'POST',
-        body: formData,
-      })
-
+      const response = await fetch('/api/analyze-image', { method: 'POST', body: formData })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
 
       setImageAnalysis(data.analysis)
-      // Pre-fill topic with suggested topic
-      if (data.analysis.suggestedTopic) {
-        setTopic(data.analysis.suggestedTopic)
-        setTone(data.analysis.recommendedTone || 'educational')
-      }
+      // Pre-fill topic and tone from analysis
+      if (data.analysis.suggestedTopic) setTopic(data.analysis.suggestedTopic)
+      if (data.analysis.recommendedTone) setTone(data.analysis.recommendedTone)
     } catch (err: any) {
       setError(err.message || 'Failed to analyze image')
     } finally {
@@ -96,27 +83,19 @@ function CreateReelForm() {
     if (!instagramUrl) return
     setIsAnalyzing(true)
     setError('')
-
     try {
       const response = await fetch('/api/fetch-instagram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: instagramUrl, userPrompt: instagramPrompt }),
+        body: JSON.stringify({ url: instagramUrl, userPrompt: instagramPrompt, categoryId: selectedCategory.id }),
       })
-
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
-
       setInstagramAnalysis(data.analysis)
       setInstagramFetchedReal(data.fetchedRealData || false)
       setInstagramOriginalPost(data.originalPost || null)
-
-      // Use hookIdea as the topic seed if available, otherwise suggestedTopic
       const topicSeed = data.analysis.hookIdea || data.analysis.suggestedTopic
-      if (topicSeed) {
-        setTopic(topicSeed)
-        setTone(data.analysis.recommendedTone || 'educational')
-      }
+      if (topicSeed) { setTopic(topicSeed); setTone(data.analysis.recommendedTone || 'educational') }
     } catch (err: any) {
       setError(err.message || 'Failed to analyze Instagram post')
     } finally {
@@ -125,29 +104,43 @@ function CreateReelForm() {
   }
 
   const handleGenerate = async () => {
-    if (!topic.trim()) {
-      setError('Please enter a topic or analyze an image/post first')
-      return
-    }
-
+    if (!topic.trim()) { setError('Please enter a topic first'); return }
     setIsGenerating(true)
     setError('')
-
     try {
-      // Build enriched topic based on mode
       let enrichedTopic = topic.trim()
 
-      if (inputMode === 'image' && imageAnalysis) {
-        // Pass rich Mistral vision context to content generator
-        const ctx = [
-          imageAnalysis.subject && `Image shows: ${imageAnalysis.subject}`,
-          imageAnalysis.emotion && `Mood: ${imageAnalysis.emotion}`,
-          imageAnalysis.indianContext && `Indian context: ${imageAnalysis.indianContext}`,
-          imageAnalysis.hookIdea && `Suggested hook: ${imageAnalysis.hookIdea}`,
-        ].filter(Boolean).join('. ')
-        enrichedTopic = `${topic}. ${ctx}`
-      } else if (inputMode === 'instagram' && instagramAnalysis) {
-        enrichedTopic = `${topic}. Content angle: ${instagramAnalysis.contentAngle}. Key points: ${instagramAnalysis.keyPoints?.join(', ')}`
+      // If image was analysed, pass the full generated content directly
+      if (inputMode === 'image' && imageAnalysis?.hookImageText) {
+        // Image analysis already generated full content — use it directly
+        const response = await fetch('/api/content/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: imageAnalysis.suggestedTopic || topic,
+            tone: imageAnalysis.recommendedTone || tone,
+            categoryId: selectedCategory.id,
+            generationMode: 'image_based',
+            // Pass pre-generated content to skip LLM call
+            preGeneratedContent: {
+              hook: imageAnalysis.hook,
+              script: imageAnalysis.script,
+              caption: imageAnalysis.caption,
+              hashtags: imageAnalysis.hashtags,
+              cta: imageAnalysis.cta,
+              hookImageText: imageAnalysis.hookImageText,
+              contentImageText: imageAnalysis.contentImageText,
+            },
+          }),
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Failed to generate content')
+        router.push(`/dashboard/preview/${data.data.reel.id}`)
+        return
+      }
+
+      if (inputMode === 'instagram' && instagramAnalysis) {
+        enrichedTopic = `${topic}. Content angle: ${instagramAnalysis.contentAngle || ''}. Hook: ${instagramAnalysis.hookIdea || ''}`
       }
 
       const response = await fetch('/api/content/generate', {
@@ -156,13 +149,12 @@ function CreateReelForm() {
         body: JSON.stringify({
           topic: enrichedTopic,
           tone,
-          generationMode: inputMode === 'prompt' ? 'manual' : inputMode === 'image' ? 'image_based' : 'instagram_inspired',
+          categoryId: selectedCategory.id,
+          generationMode: inputMode === 'prompt' ? 'manual' : 'instagram_inspired',
         }),
       })
-
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to generate content')
-
       router.push(`/dashboard/preview/${data.data.reel.id}`)
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
@@ -171,7 +163,7 @@ function CreateReelForm() {
     }
   }
 
-  const canGenerate = topic.trim().length > 0
+  const canGenerate = topic.trim().length > 0 || (inputMode === 'image' && imageAnalysis)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -192,25 +184,61 @@ function CreateReelForm() {
 
       <main className="container mx-auto px-4 py-8 max-w-3xl">
 
-        {/* Mode Selector */}
+        {/* ── CATEGORY SELECTOR ── */}
+        <div className="mb-6">
+          <label className="block text-sm font-semibold mb-2 text-gray-700">Select Category</label>
+          <div className="relative">
+            <button
+              onClick={() => setShowCategoryPicker(!showCategoryPicker)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-400 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{selectedCategory.emoji}</span>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">{selectedCategory.label}</p>
+                  <p className="text-xs text-gray-500">{selectedCategory.description}</p>
+                </div>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showCategoryPicker ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCategoryPicker && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-xl z-50 max-h-80 overflow-y-auto">
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => { setSelectedCategory(cat); setShowCategoryPicker(false); setTopic(''); setImageAnalysis(null) }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left ${selectedCategory.id === cat.id ? 'bg-blue-50' : ''}`}
+                  >
+                    <span className="text-xl">{cat.emoji}</span>
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">{cat.label}</p>
+                      <p className="text-xs text-gray-500">{cat.description}</p>
+                    </div>
+                    {selectedCategory.id === cat.id && <CheckCircle className="w-4 h-4 text-blue-600 ml-auto" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── INPUT MODE TABS ── */}
         <div className="flex gap-2 mb-6 bg-white p-1 rounded-xl border">
           {[
-            { key: 'prompt', label: 'Write Prompt', icon: FileText, desc: 'Enter a topic' },
-            { key: 'image', label: 'Upload Image', icon: Image, desc: 'Use your image' },
-            { key: 'instagram', label: 'Instagram Link', icon: Instagram, desc: 'Inspired by post' },
-          ].map(({ key, label, icon: Icon, desc }) => (
+            { key: 'prompt', label: 'Write Topic', icon: FileText },
+            { key: 'image', label: 'Upload Image', icon: Image },
+            { key: 'instagram', label: 'Instagram Link', icon: Instagram },
+          ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => { setInputMode(key as InputMode); setError('') }}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-lg transition-all ${
-                inputMode === key
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-50'
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg transition-all text-sm font-medium ${
+                inputMode === key ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              <Icon className="w-5 h-5" />
-              <span className="text-sm font-medium">{label}</span>
-              <span className={`text-xs ${inputMode === key ? 'text-blue-100' : 'text-gray-400'}`}>{desc}</span>
+              <Icon className="w-4 h-4" />
+              {label}
             </button>
           ))}
         </div>
@@ -218,15 +246,15 @@ function CreateReelForm() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-blue-600" />
-              {inputMode === 'prompt' && 'Generate from Topic'}
+              <span className="text-xl">{selectedCategory.emoji}</span>
+              {inputMode === 'prompt' && `Create ${selectedCategory.label} Reel`}
               {inputMode === 'image' && 'Generate from Image'}
               {inputMode === 'instagram' && 'Generate from Instagram Post'}
             </CardTitle>
             <CardDescription>
-              {inputMode === 'prompt' && 'Enter a finance topic and AI will create a viral Reel'}
-              {inputMode === 'image' && 'Upload an image and AI will analyze it to create matching content'}
-              {inputMode === 'instagram' && 'Paste an Instagram post link and AI will create a similar but unique Reel'}
+              {inputMode === 'prompt' && `AI will create a story-driven ${selectedCategory.label} reel for Indian audience`}
+              {inputMode === 'image' && 'Upload an image — AI analyses it and creates full hook + script inspired by it'}
+              {inputMode === 'instagram' && 'Paste a post URL — AI creates original content inspired by the same style'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -234,22 +262,34 @@ function CreateReelForm() {
             {/* ── PROMPT MODE ── */}
             {inputMode === 'prompt' && (
               <div>
-                <label className="block text-sm font-medium mb-2">Finance Topic</label>
+                <label className="block text-sm font-medium mb-2">Topic</label>
                 <textarea
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g., How to save $10,000 in a year, Best investment strategies for beginners..."
-                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                  rows={4}
+                  placeholder={`e.g., ${selectedCategory.exampleTopics[0]}`}
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
+                  rows={3}
                   disabled={isGenerating}
                 />
+                {/* Example topics */}
+                <div className="mt-3 grid grid-cols-1 gap-2">
+                  {selectedCategory.exampleTopics.map((ex) => (
+                    <button
+                      key={ex}
+                      onClick={() => setTopic(ex)}
+                      disabled={isGenerating}
+                      className="text-left px-3 py-2 border rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors text-sm text-gray-700"
+                    >
+                      → {ex}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
             {/* ── IMAGE MODE ── */}
             {inputMode === 'image' && (
               <div className="space-y-4">
-                {/* Upload area */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Upload Image</label>
                   {!imagePreview ? (
@@ -263,11 +303,7 @@ function CreateReelForm() {
                     </div>
                   ) : (
                     <div className="relative">
-                      <img
-                        src={imagePreview}
-                        alt="Uploaded"
-                        className="w-full max-h-64 object-cover rounded-xl border"
-                      />
+                      <img src={imagePreview} alt="Uploaded" className="w-full max-h-64 object-cover rounded-xl border" />
                       <button
                         onClick={() => { setUploadedImage(null); setImagePreview(''); setImageAnalysis(null); setTopic('') }}
                         className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
@@ -276,16 +312,9 @@ function CreateReelForm() {
                       </button>
                     </div>
                   )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                  />
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                 </div>
 
-                {/* Optional prompt for image */}
                 {imagePreview && (
                   <div>
                     <label className="block text-sm font-medium mb-2">
@@ -295,97 +324,56 @@ function CreateReelForm() {
                       type="text"
                       value={imagePrompt}
                       onChange={(e) => setImagePrompt(e.target.value)}
-                      placeholder="e.g., focus on savings tips, make it motivational..."
+                      placeholder="e.g., focus on savings, make it motivational..."
                       className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 )}
 
-                {/* Analyze button */}
                 {imagePreview && !imageAnalysis && (
-                  <Button
-                    onClick={handleAnalyzeImage}
-                    disabled={isAnalyzing}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    {isAnalyzing ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing Image...</>
-                    ) : (
-                      <><Sparkles className="w-4 h-4 mr-2" /> Analyze Image with AI</>
-                    )}
+                  <Button onClick={handleAnalyzeImage} disabled={isAnalyzing} variant="outline" className="w-full">
+                    {isAnalyzing
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analysing with Mistral Vision AI...</>
+                      : <><Sparkles className="w-4 h-4 mr-2" /> Analyse Image & Generate Content</>
+                    }
                   </Button>
                 )}
 
-                {/* Analysis result */}
                 {imageAnalysis && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center gap-2 text-green-700 font-medium">
+                    <div className="flex items-center gap-2 text-green-700 font-semibold">
                       <CheckCircle className="w-4 h-4" />
-                      ✅ Image analysed by Mistral Vision AI
+                      Full content generated from image!
                     </div>
-
-                    {/* What the AI saw */}
                     <div className="bg-white rounded-lg p-3 border border-green-100 text-sm space-y-1.5">
-                      <div>
-                        <span className="text-gray-500 font-medium">What AI sees:</span>
-                        <span className="ml-1 text-gray-800">{imageAnalysis.subject}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 font-medium">Emotion/mood:</span>
-                        <span className="ml-1 text-gray-800">{imageAnalysis.emotion}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 font-medium">Indian context:</span>
-                        <span className="ml-1 text-gray-800">{imageAnalysis.indianContext}</span>
-                      </div>
+                      <div><span className="text-gray-500">AI sees:</span> <span className="text-gray-800">{imageAnalysis.subject}</span></div>
+                      <div><span className="text-gray-500">Content angle:</span> <span className="text-gray-800">{imageAnalysis.contentAngle}</span></div>
+                      <div><span className="text-gray-500">Topic:</span> <span className="text-gray-800 font-medium">{imageAnalysis.suggestedTopic}</span></div>
                     </div>
-
-                    {/* Hook idea */}
-                    {imageAnalysis.hookIdea && (
+                    {imageAnalysis.hook && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                        <p className="text-xs text-yellow-700 font-medium mb-1">💡 Suggested Hook</p>
-                        <p className="text-sm text-gray-800 italic">"{imageAnalysis.hookIdea}"</p>
-                        <button
-                          onClick={() => setTopic(imageAnalysis.hookIdea)}
-                          className="text-xs text-blue-600 hover:underline mt-1"
-                        >
-                          Use this as topic →
-                        </button>
+                        <p className="text-xs text-yellow-700 font-medium mb-1">Generated Hook</p>
+                        <p className="text-sm text-gray-800 italic">"{imageAnalysis.hook}"</p>
                       </div>
                     )}
-
-                    {/* Content ideas */}
-                    <div className="text-sm">
-                      <span className="text-gray-500 font-medium">Content ideas (click to use):</span>
-                      <ul className="mt-2 space-y-1.5">
-                        {imageAnalysis.contentIdeas?.slice(0, 3).map((idea: string, i: number) => (
-                          <li key={i}>
-                            <button
-                              onClick={() => setTopic(idea)}
-                              className="w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors text-gray-700 text-xs"
-                            >
-                              → {idea}
-                            </button>
-                          </li>
+                    <p className="text-xs text-green-700">
+                      Hook + Script + Images are ready. Click Generate to create the reel.
+                    </p>
+                    {/* Alternative ideas */}
+                    {imageAnalysis.contentIdeas?.length > 0 && (
+                      <div>
+                        <p className="text-xs text-gray-500 font-medium mb-1">Or try a different angle:</p>
+                        {imageAnalysis.contentIdeas.slice(0, 3).map((idea: string, i: number) => (
+                          <button
+                            key={i}
+                            onClick={() => setTopic(idea)}
+                            className="block w-full text-left text-xs px-3 py-1.5 border rounded-lg hover:bg-blue-50 hover:border-blue-400 transition-colors mb-1 text-gray-700"
+                          >
+                            → {idea}
+                          </button>
                         ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-
-                {/* Topic input after analysis */}
-                {imageAnalysis && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Topic <span className="text-gray-400 font-normal">(auto-filled from analysis, edit if needed)</span>
-                    </label>
-                    <textarea
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
-                      rows={3}
-                    />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -396,130 +384,89 @@ function CreateReelForm() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">Instagram Post URL</label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="url"
-                        value={instagramUrl}
-                        onChange={(e) => setInstagramUrl(e.target.value)}
-                        placeholder="https://www.instagram.com/p/..."
-                        className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
+                  <div className="relative">
+                    <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="url"
+                      value={instagramUrl}
+                      onChange={(e) => setInstagramUrl(e.target.value)}
+                      placeholder="https://www.instagram.com/p/..."
+                      className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Paste any Instagram post, reel, or video URL
-                  </p>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Your tweaks / requirements <span className="text-gray-400 font-normal">(optional)</span>
+                    Your tweaks <span className="text-gray-400 font-normal">(optional)</span>
                   </label>
                   <textarea
                     value={instagramPrompt}
                     onChange={(e) => setInstagramPrompt(e.target.value)}
-                    placeholder="e.g., make it more educational, focus on crypto instead of stocks, add more statistics..."
+                    placeholder="e.g., make it more educational, focus on savings instead..."
                     className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
-                    rows={3}
+                    rows={2}
                   />
                 </div>
-
                 {instagramUrl && !instagramAnalysis && (
-                  <Button
-                    onClick={handleAnalyzeInstagram}
-                    disabled={isAnalyzing || !instagramUrl}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    {isAnalyzing ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing Post...</>
-                    ) : (
-                      <><Instagram className="w-4 h-4 mr-2" /> Analyze & Generate Concept</>
-                    )}
+                  <Button onClick={handleAnalyzeInstagram} disabled={isAnalyzing || !instagramUrl} variant="outline" className="w-full">
+                    {isAnalyzing
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analysing Post...</>
+                      : <><Instagram className="w-4 h-4 mr-2" /> Analyse & Generate Concept</>
+                    }
                   </Button>
                 )}
-
                 {instagramAnalysis && (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-2">
                     <div className="flex items-center gap-2 text-purple-700 font-medium">
                       <CheckCircle className="w-4 h-4" />
-                      {instagramFetchedReal ? '✅ Real post data fetched & analysed!' : 'Content Concept Ready'}
+                      {instagramFetchedReal ? 'Real post analysed!' : 'Content concept ready'}
                     </div>
-
-                    {/* Show real post data if fetched */}
                     {instagramOriginalPost && (
                       <div className="bg-white rounded-lg p-3 border border-purple-100 text-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Original Post</p>
                         <p className="text-gray-700 font-medium">@{instagramOriginalPost.author}</p>
-                        <p className="text-gray-600 text-xs mt-1 line-clamp-3 italic">
-                          "{instagramOriginalPost.caption}"
-                        </p>
+                        <p className="text-gray-600 text-xs mt-1 line-clamp-2 italic">"{instagramOriginalPost.caption}"</p>
                       </div>
                     )}
-
-                    <div className="text-sm space-y-1.5">
-                      {instagramAnalysis.originalStyle && instagramFetchedReal && (
-                        <div>
-                          <span className="text-gray-500">Original style:</span>
-                          <span className="ml-1 text-gray-800">{instagramAnalysis.originalStyle}</span>
-                        </div>
-                      )}
-                      <div>
-                        <span className="text-gray-500">Finance angle:</span>
-                        <span className="ml-1 text-gray-800">{instagramAnalysis.contentAngle}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Hook idea:</span>
-                        <span className="ml-1 text-gray-800 font-medium">"{instagramAnalysis.hookIdea}"</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">What makes it unique:</span>
-                        <span className="ml-1 text-gray-800">{instagramAnalysis.differentiators}</span>
-                      </div>
+                    <div className="text-sm space-y-1">
+                      <div><span className="text-gray-500">Angle:</span> <span className="text-gray-800">{instagramAnalysis.contentAngle}</span></div>
+                      <div><span className="text-gray-500">Hook:</span> <span className="text-gray-800 font-medium">"{instagramAnalysis.hookIdea}"</span></div>
                     </div>
                   </div>
                 )}
-
                 {instagramAnalysis && (
                   <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Topic <span className="text-gray-400 font-normal">(auto-filled, edit if needed)</span>
-                    </label>
+                    <label className="block text-sm font-medium mb-2">Topic <span className="text-gray-400 font-normal">(edit if needed)</span></label>
                     <textarea
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
                       className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
-                      rows={3}
+                      rows={2}
                     />
                   </div>
                 )}
               </div>
             )}
 
-            {/* ── TONE SELECTOR (all modes) ── */}
-            {(inputMode === 'prompt' || topic) && (
+            {/* ── TONE SELECTOR ── */}
+            {(inputMode === 'prompt' || (inputMode !== 'image') || !imageAnalysis) && (
               <div>
-                <label className="block text-sm font-medium mb-2">Content Tone</label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <label className="block text-sm font-medium mb-2">Tone</label>
+                <div className="grid grid-cols-4 gap-2">
                   {[
-                    { value: 'educational', emoji: '📚', label: 'Educational' },
-                    { value: 'motivational', emoji: '🔥', label: 'Motivational' },
-                    { value: 'urgent', emoji: '⚡', label: 'Urgent' },
-                    { value: 'casual', emoji: '😊', label: 'Casual' },
-                  ].map(({ value, emoji, label }) => (
+                    { value: 'educational', label: 'Educational' },
+                    { value: 'motivational', label: 'Motivational' },
+                    { value: 'urgent', label: 'Urgent' },
+                    { value: 'casual', label: 'Casual' },
+                  ].map(({ value, label }) => (
                     <button
                       key={value}
                       onClick={() => setTone(value)}
                       disabled={isGenerating}
-                      className={`px-3 py-2 rounded-lg border-2 transition-colors text-sm ${
-                        tone === value
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
+                      className={`py-2 rounded-lg border-2 transition-colors text-sm font-medium ${
+                        tone === value ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      {emoji} {label}
+                      {label}
                     </button>
                   ))}
                 </div>
@@ -535,90 +482,18 @@ function CreateReelForm() {
             )}
 
             {/* Generate Button */}
-            <Button
-              onClick={handleGenerate}
-              disabled={isGenerating || !canGenerate}
-              className="w-full"
-              size="lg"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Generating Content... (~20 seconds)
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-5 h-5 mr-2" />
-                  Generate Reel
-                </>
-              )}
+            <Button onClick={handleGenerate} disabled={isGenerating || !canGenerate} className="w-full" size="lg">
+              {isGenerating
+                ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Generating... (~20 seconds)</>
+                : <><Sparkles className="w-5 h-5 mr-2" /> Generate Reel</>
+              }
             </Button>
 
-            {/* Info box */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
-                <strong>What happens next:</strong>
-                <br />1. AI generates viral hook and script
-                <br />2. NVIDIA FLUX creates eye-catching images
-                <br />3. You review and approve before posting
-              </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+              <strong>What you get:</strong> Story-style hook + script + 3 image cards (hook, content, combined) ready to post
             </div>
           </CardContent>
         </Card>
-
-        {/* Example topics (prompt mode only) */}
-        {inputMode === 'prompt' && (
-          <div className="mt-8">
-            <h3 className="text-lg font-semibold mb-4">💡 Need inspiration?</h3>
-            <div className="grid md:grid-cols-2 gap-3">
-              {[
-                '5 ways to save money on groceries',
-                'How compound interest makes you rich',
-                'Best side hustles for 2024',
-                'Investing mistakes to avoid',
-                'How to build an emergency fund',
-                'Passive income ideas that actually work',
-              ].map((example) => (
-                <button
-                  key={example}
-                  onClick={() => setTopic(example)}
-                  disabled={isGenerating}
-                  className="text-left px-4 py-3 border rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-sm"
-                >
-                  → {example}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Image mode tips */}
-        {inputMode === 'image' && (
-          <div className="mt-8 bg-white border rounded-xl p-5">
-            <h3 className="font-semibold mb-3">📸 How Image Analysis Works</h3>
-            <ul className="text-sm text-gray-600 space-y-2">
-              <li>🤖 <strong>Mistral Large 3 Vision AI</strong> reads your image in detail</li>
-              <li>✅ Understands the scene, mood, and Indian financial context</li>
-              <li>✅ Suggests a hook, tone, and 3 content ideas specific to the image</li>
-              <li>✅ Works with charts, screenshots, lifestyle photos, news clippings</li>
-              <li>💡 The richer the image, the more relevant the content</li>
-            </ul>
-          </div>
-        )}
-
-        {/* Instagram mode tips */}
-        {inputMode === 'instagram' && (
-          <div className="mt-8 bg-white border rounded-xl p-5">
-            <h3 className="font-semibold mb-3">📱 Instagram Link Tips</h3>
-            <ul className="text-sm text-gray-600 space-y-2">
-              <li>✅ Paste any public Instagram post URL</li>
-              <li>✅ Works with posts, reels, and videos</li>
-              <li>✅ Add your tweaks to make it unique</li>
-              <li>✅ AI creates inspired but original content</li>
-              <li>⚠️ Content will be finance-focused regardless of original post</li>
-            </ul>
-          </div>
-        )}
       </main>
     </div>
   )
@@ -628,10 +503,7 @@ export default function CreateReelPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">Loading...</p>
-        </div>
+        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
       </div>
     }>
       <CreateReelForm />
