@@ -263,26 +263,52 @@ Return ONLY valid JSON:
   }
 }
 
-function buildFallback(categoryLabel: string, userHint: string | null, seed: any) {
+function buildFallback(categoryLabel: string, userHint: string | null, s: any) {
+  // s is the scenario object with: name1, name2, age, monthlySalary, monthlyInvestment, years, investment1, investment2, cagr1, cagr2, moralLine
+  const name1 = s?.name1 || 'Arjun'
+  const name2 = s?.name2 || 'Deepak'
+  const age   = s?.age   || 28
+  const salary = s?.monthlySalary || 85000
+  const sip    = s?.monthlyInvestment || 10000
+  const years  = s?.years || 20
+  const inv1   = s?.investment1 || 'SIP in Parag Parikh Flexi Cap'
+  const inv2   = s?.investment2 || 'FD'
+  const cagr1  = s?.cagr1 || 13
+  const cagr2  = s?.cagr2 || 6
+  const moral  = s?.moralLine || 'The best time to invest was yesterday. The second best time is today.'
+
+  const r1 = cagr1 / 100 / 12
+  const r2 = cagr2 / 100 / 12
+  const n  = years * 12
+  const corpus1 = Math.round(sip * ((Math.pow(1 + r1, n) - 1) / r1))
+  const corpus2 = Math.round(sip * ((Math.pow(1 + r2, n) - 1) / r2))
+  const gap = corpus1 - corpus2
+
+  const fmt = (v: number) => {
+    if (v >= 10000000) return `Rs.${(v/10000000).toFixed(2)} crore`
+    if (v >= 100000)   return `Rs.${(v/100000).toFixed(1)} lakh`
+    return `Rs.${v.toLocaleString('en-IN')}`
+  }
+
   return {
     imageReading: 'Could not read image content',
     subject: 'Finance content image',
-    contentAngle: 'Educational finance story',
+    contentAngle: 'Educational finance comparison',
     suggestedTopic: userHint || `${categoryLabel} tips for Indians`,
     recommendedTone: 'educational',
-    hook: `${seed.names[0]} and ${seed.names[1]} both earn Rs.${seed.salary.toLocaleString('en-IN')}/month. One will retire rich. One won't.`,
-    script: `${seed.names[0]} and ${seed.names[1]}.\nSame salary. Same age.\n\nDifferent one decision.\n\n${seed.years} years later.\nThe gap is Rs.1 crore.\n\nWhat did ${seed.names[0]} do differently?`,
+    hook: `${name1} and ${name2} both earn ${fmt(salary)}/month. One will retire rich. One won't.`,
+    script: `${name1} and ${name2}.\nSame salary. Same age ${age}.\n\nDifferent one decision.\n\n${years} years later.\nThe gap is ${fmt(gap)}.\n\nWhat did ${name1} do differently?\n\n${moral}`,
     caption: 'The one decision that changes everything. Follow for more.',
     hashtags: ['#IndianFinance', '#SIP', '#MutualFunds', '#MoneyTips'],
     cta: 'Follow for daily finance insights',
-    hookImageText: `${seed.names[0]} and ${seed.names[1]}.\nBoth ${seed.age1} years old.\nBoth earn Rs.${seed.salary.toLocaleString('en-IN')}/month.\n\n${seed.names[0]} invests Rs.${seed.sipAmount.toLocaleString('en-IN')}/month in SIP.\n${seed.names[1]} keeps it in savings account.\n\nAfter ${seed.years} years...`,
-    contentImageText: `${seed.names[0]}'s SIP corpus: Rs.${Math.round(seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) / 100000)} lakh\n${seed.names[1]}'s savings: Rs.${Math.round(seed.sipAmount * seed.years * 12 * 1.035 / 100000)} lakh\n\nDifference: Rs.${Math.round((seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) - seed.sipAmount * seed.years * 12 * 1.035) / 100000)} lakh\n\nSame money. Same years.\nDifferent decision.`,
-    comparisonHookText: `${seed.names[0]} vs ${seed.names[1]}.\nSame Rs.${seed.sipAmount.toLocaleString('en-IN')}/month.\nSame ${seed.years} years.\n\nOne chose SIP.\nOne chose FD.\n\nThe difference will shock you.`,
-    comparisonContentText: `SIP at 12% CAGR:\nRs.${Math.round(seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) / 100000)} lakh\n\nFD at 6.5%:\nRs.${Math.round(seed.sipAmount * ((Math.pow(1 + 0.065/12, seed.years*12) - 1) / (0.065/12)) / 100000)} lakh\n\nGap: Rs.${Math.round((seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) - seed.sipAmount * ((Math.pow(1 + 0.065/12, seed.years*12) - 1) / (0.065/12))) / 100000)} lakh\n\nThat is the cost of playing it safe.`,
+    hookImageText: `${name1} and ${name2}.\nBoth ${age} years old.\nBoth earn ${fmt(salary)}/month.\n\n${name1} invests ${fmt(sip)}/month in ${inv1}.\n${name2} keeps it in ${inv2}.\n\nAfter ${years} years...\n\n${moral}`,
+    contentImageText: `${name1}'s corpus: ${fmt(corpus1)}\n${name2}'s corpus: ${fmt(corpus2)}\n\nDifference: ${fmt(gap)}\n\nSame money. Same years.\nDifferent decision.\n\n${moral}`,
+    comparisonHookText: `${name1} vs ${name2}.\nSame ${fmt(sip)}/month.\nSame ${years} years.\n\nOne chose ${inv1}.\nOne chose ${inv2}.\n\nThe difference will shock you.\n\n${moral}`,
+    comparisonContentText: `${inv1} at ${cagr1}% CAGR:\n${fmt(corpus1)}\n\n${inv2} at ${cagr2}%:\n${fmt(corpus2)}\n\nGap: ${fmt(gap)}\n\nThat is the cost of playing it safe.\n\n${moral}`,
     contentIdeas: [
-      `${categoryLabel}: PPF vs ELSS over ${seed.years} years`,
+      `${categoryLabel}: PPF vs ELSS over ${years} years`,
       `${categoryLabel}: NPS vs mutual fund for retirement`,
-      `${categoryLabel}: Gold vs equity over ${seed.years} years`,
+      `${categoryLabel}: Gold vs equity over ${years} years`,
     ],
   }
 }
