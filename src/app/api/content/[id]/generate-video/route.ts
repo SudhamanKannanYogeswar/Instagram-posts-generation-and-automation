@@ -26,7 +26,7 @@ export async function POST(
       : reel.generated_content
 
     if (!content) {
-      return NextResponse.json({ error: 'Content not found for this reel' }, { status: 404 })
+      return NextResponse.json({ error: 'Content not found' }, { status: 404 })
     }
 
     // 2. Fetch images
@@ -38,7 +38,7 @@ export async function POST(
 
     const imageUrls = images?.map(i => i.image_url) || []
 
-    // 3. Generate video frames + assemble with ffmpeg-static
+    // 3. Try to generate video
     const result = await generateReelVideo({
       contentId: content.id,
       hook: content.hook,
@@ -48,7 +48,7 @@ export async function POST(
       durationSeconds: 30,
     })
 
-    // 4. Try to upload to Supabase Storage
+    // 4. Upload to Supabase Storage
     let videoUrl = ''
     let thumbnailUrl = ''
 
@@ -59,10 +59,8 @@ export async function POST(
       const videoStoragePath = `reels/${reelId}/reel.mp4`
       const thumbStoragePath = `reels/${reelId}/thumbnail.jpg`
 
-      // Ensure bucket exists
       const { data: buckets } = await supabaseAdmin.storage.listBuckets()
-      const bucketExists = buckets?.some(b => b.name === 'reels')
-      if (!bucketExists) {
+      if (!buckets?.some(b => b.name === 'reels')) {
         await supabaseAdmin.storage.createBucket('reels', { public: true })
       }
 
@@ -80,40 +78,40 @@ export async function POST(
       videoUrl = vd?.publicUrl || ''
       thumbnailUrl = td?.publicUrl || ''
     } catch (storageErr: any) {
-      console.warn('Storage upload failed, falling back to base64:', storageErr.message)
-      // Fallback: return video as base64 data URL so it still works
+      // Fallback to base64
       const videoBuffer = fs.readFileSync(result.videoPath)
       videoUrl = `data:video/mp4;base64,${videoBuffer.toString('base64')}`
       const thumbBuffer = fs.readFileSync(result.thumbnailPath)
       thumbnailUrl = `data:image/jpeg;base64,${thumbBuffer.toString('base64')}`
     }
 
-    // 5. Update reel record
     await supabaseAdmin
       .from('reels')
-      .update({
-        video_url: videoUrl,
-        thumbnail_url: thumbnailUrl,
-        duration_seconds: result.durationSeconds,
-        status: 'pending_approval',
-      })
+      .update({ video_url: videoUrl, thumbnail_url: thumbnailUrl, duration_seconds: result.durationSeconds, status: 'pending_approval' })
       .eq('id', reelId)
 
-    // 6. Cleanup temp files
-    try {
-      fs.unlinkSync(result.videoPath)
-      fs.unlinkSync(result.thumbnailPath)
-    } catch {}
+    try { fs.unlinkSync(result.videoPath); fs.unlinkSync(result.thumbnailPath) } catch {}
 
     return NextResponse.json({
       success: true,
       data: { videoUrl, thumbnailUrl, durationSeconds: result.durationSeconds },
     })
   } catch (error: any) {
-    console.error('Video generation error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Video generation failed' },
-      { status: 500 }
-    )
+    console.error('Video generation error:', error.message)
+
+    // If ffmpeg is not available, return a helpful message
+    if (
+      error.message?.includes('ffmpeg') ||
+      error.message?.includes('ENOENT') ||
+      error.message?.includes('not found')
+    ) {
+      return NextResponse.json({
+        error: 'video_unavailable',
+        message: 'Video generation is not available on this server. Download the images above and use them directly on Instagram — they work perfectly as Reels slides.',
+        suggestion: 'Use the downloaded images as a carousel post or create a Reel using Instagram\'s built-in editor with your images.',
+      }, { status: 422 })
+    }
+
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

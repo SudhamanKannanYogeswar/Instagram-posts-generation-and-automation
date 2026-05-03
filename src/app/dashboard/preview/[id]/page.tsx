@@ -62,6 +62,12 @@ export default function PreviewPage() {
     try {
       const response = await fetch(`/api/content/${reelId}/generate-video`, { method: 'POST' })
       const result = await response.json()
+
+      if (result.error === 'video_unavailable') {
+        setVideoError(result.message)
+        return
+      }
+
       if (!response.ok) throw new Error(result.error || 'Video generation failed')
       setVideoUrl(result.data.videoUrl)
     } catch (err: any) {

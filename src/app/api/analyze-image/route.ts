@@ -9,13 +9,8 @@ const VISION_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 const VISION_KEY = process.env.VISION_API_KEY || process.env.OPENAI_API_KEY || ''
 const VISION_MODEL = 'meta/llama-3.2-11b-vision-instruct'
 
-/**
- * Compress image to max 800px and upload to Supabase Storage.
- * Returns a public URL — much faster for the vision API than base64.
- */
 async function uploadImageForVision(buffer: Buffer, mimeType: string): Promise<string | null> {
   try {
-    // Compress to max 800px wide/tall, JPEG 85%
     const compressed = await sharp(buffer)
       .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 85 })
@@ -23,7 +18,6 @@ async function uploadImageForVision(buffer: Buffer, mimeType: string): Promise<s
 
     const filename = `vision-temp/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
 
-    // Ensure bucket exists
     const { data: buckets } = await supabaseAdmin.storage.listBuckets()
     if (!buckets?.some(b => b.name === 'uploads')) {
       await supabaseAdmin.storage.createBucket('uploads', { public: true })
@@ -33,15 +27,11 @@ async function uploadImageForVision(buffer: Buffer, mimeType: string): Promise<s
       .from('uploads')
       .upload(filename, compressed, { contentType: 'image/jpeg', upsert: true })
 
-    if (error) {
-      console.warn('Storage upload failed:', error.message)
-      return null
-    }
+    if (error) return null
 
     const { data } = supabaseAdmin.storage.from('uploads').getPublicUrl(filename)
     return data?.publicUrl || null
-  } catch (err) {
-    console.warn('Image upload failed:', err)
+  } catch {
     return null
   }
 }
@@ -60,20 +50,15 @@ export async function POST(request: NextRequest) {
 
     const category = getCategoryById(categoryId || 'personal_finance') || DEFAULT_CATEGORY
 
-    // ── Get a URL for the image (URL is much faster than base64 for vision API) ──
+    // Get a URL for the image (much faster than base64 for vision API)
     let finalImageUrl: string
-
     if (imageFile) {
       const bytes  = await imageFile.arrayBuffer()
       const buffer = Buffer.from(bytes)
-
-      // Try to upload to Supabase and get a public URL
       const publicUrl = await uploadImageForVision(buffer, imageFile.type || 'image/jpeg')
-
       if (publicUrl) {
         finalImageUrl = publicUrl
       } else {
-        // Fallback: compress and use base64 (slower but works)
         const compressed = await sharp(buffer)
           .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
           .jpeg({ quality: 75 })
@@ -84,32 +69,67 @@ export async function POST(request: NextRequest) {
       finalImageUrl = imageUrl!
     }
 
-    // ── Concise prompt for faster response ──
+    // Randomise scenario values so output is never the same
+    const seed = {
+      age1: 24 + Math.floor(Math.random() * 6),
+      age2: 30 + Math.floor(Math.random() * 8),
+      salary: [45000, 52000, 58000, 65000, 72000, 80000][Math.floor(Math.random() * 6)],
+      sipAmount: [3000, 5000, 7500, 8000, 10000, 12000][Math.floor(Math.random() * 6)],
+      years: [15, 18, 20, 22, 25][Math.floor(Math.random() * 5)],
+      names: [['Rahul', 'Arjun'], ['Priya', 'Meera'], ['Karthik', 'Vikram'], ['Ananya', 'Sneha'], ['Rohan', 'Amit']][Math.floor(Math.random() * 5)],
+    }
+
+    // Two-step prompt:
+    // Step 1: Extract EXACTLY what is in the image (instruments, numbers, format, structure)
+    // Step 2: Create a SIMILAR post with slightly different numbers/names but same style
     const prompt = `You are an expert ${category.label} content creator for Indian Instagram.
 
-${category.systemPrompt}
+STEP 1 — READ THE IMAGE CAREFULLY:
+Extract EXACTLY what is written in this image:
+- What financial instruments are mentioned? (SIP, FD, PPF, stocks, mutual funds, etc.)
+- What specific numbers, amounts, percentages, time periods are shown?
+- What is the FORMAT? (comparison of two people, case study, data breakdown, story, etc.)
+- What is the STRUCTURE? (how many sections, what order, what style)
+- What is the HOOK or opening line?
+- What is the KEY MESSAGE or conclusion?
 
-Analyse this image. Create a complete viral Instagram Reel INSPIRED by it (not copying).
-Indian context, short punchy lines, NO emojis.
-${userHint ? `User context: "${userHint}"` : ''}
+STEP 2 — CREATE A SIMILAR POST:
+Now create a NEW post that:
+1. Uses the SAME FORMAT and STRUCTURE as the image
+2. Uses the SAME TYPE of financial instruments (if image shows SIP vs FD, your post also compares SIP vs FD or similar)
+3. Uses DIFFERENT but realistic numbers: age ${seed.age1}, salary Rs.${seed.salary.toLocaleString('en-IN')}, amount Rs.${seed.sipAmount.toLocaleString('en-IN')}/month, ${seed.years} years
+4. Uses names: ${seed.names[0]} and ${seed.names[1]}
+5. Has a DIFFERENT ANGLE or TWIST than the original — not a copy
+6. Is MORE DETAILED and SPECIFIC than the original
+7. Calculates EXACT corpus values using compound interest
+
+${userHint ? `User's specific request: "${userHint}"` : ''}
+
+RULES:
+- Short punchy lines. NO paragraphs. Blank lines between sections.
+- NO emojis in script or image text.
+- Use Rs. for rupees.
+- Every number must be calculated correctly.
 
 Return ONLY valid JSON:
 {
+  "imageReading": "what you extracted from the image — instruments, numbers, format, structure",
   "subject": "what is in the image",
-  "contentAngle": "how this inspired the content",
+  "contentAngle": "the new angle you are taking",
   "suggestedTopic": "specific topic for this reel",
   "recommendedTone": "educational|motivational|urgent|casual",
   "hook": "one powerful hook line",
-  "script": "full script in short punchy lines with blank lines between sections",
+  "script": "full script matching the image format, short punchy lines, blank lines between sections",
   "caption": "Instagram caption with emojis",
   "hashtags": ["tag1", "tag2", "tag3"],
   "cta": "call to action",
-  "hookImageText": "hook card text - short story lines, NO emojis, blank lines between sections",
-  "contentImageText": "content card text - data/facts/steps, NO emojis, blank lines between points",
-  "contentIdeas": ["idea 1", "idea 2", "idea 3"]
+  "hookImageText": "hook card — same format as image, ${seed.names[0]} and ${seed.names[1]}, specific numbers, NO emojis, blank lines",
+  "contentImageText": "content card — same structure as image, exact calculated numbers, NO emojis, blank lines",
+  "comparisonHookText": "comparison hook — ${seed.names[0]} vs ${seed.names[1]}, same starting point, NO emojis",
+  "comparisonContentText": "comparison content — exact corpus for both, the gap, WHY it happened, NO emojis",
+  "contentIdeas": ["variation 1 with different instruments", "variation 2 with different time period", "variation 3 with different scenario"]
 }`
 
-    // ── Call vision API ──
     const controller = new AbortController()
     const timeoutId  = setTimeout(() => controller.abort(), 25000)
 
@@ -131,8 +151,8 @@ Return ONLY valid JSON:
               { type: 'text', text: prompt },
             ],
           }],
-          max_tokens: 1200,
-          temperature: 0.2,
+          max_tokens: 1500,
+          temperature: 0.4,  // slightly higher for more variety
           stream: false,
         }),
         signal: controller.signal,
@@ -142,15 +162,12 @@ Return ONLY valid JSON:
     }
 
     if (!response.ok) {
-      const errText = await response.text().catch(() => '')
-      console.error('Vision API error:', response.status, errText.slice(0, 200))
       throw new Error(`Vision API returned ${response.status}`)
     }
 
     const data    = await response.json()
     const rawText = data?.choices?.[0]?.message?.content || ''
 
-    // ── Parse JSON ──
     let analysis: any
     try {
       let cleaned = rawText
@@ -166,8 +183,8 @@ Return ONLY valid JSON:
       }
       analysis = JSON.parse(result)
     } catch {
-      console.warn('Vision JSON parse failed, using fallback')
-      analysis = buildFallback(category.label, userHint)
+      console.warn('Vision JSON parse failed')
+      analysis = buildFallback(category.label, userHint, seed)
     }
 
     return NextResponse.json({ success: true, analysis, model: VISION_MODEL })
@@ -176,7 +193,7 @@ Return ONLY valid JSON:
 
     if (error.name === 'AbortError' || error.message?.includes('abort')) {
       return NextResponse.json({
-        error: 'Vision AI timed out. The image may be too large or complex. Try a screenshot or simpler image.',
+        error: 'Vision AI timed out. Try a smaller image or use the text prompt mode.',
         code: 'TIMEOUT',
       }, { status: 504 })
     }
@@ -185,23 +202,26 @@ Return ONLY valid JSON:
   }
 }
 
-function buildFallback(categoryLabel: string, userHint: string | null) {
+function buildFallback(categoryLabel: string, userHint: string | null, seed: any) {
   return {
+    imageReading: 'Could not read image content',
     subject: 'Finance content image',
     contentAngle: 'Educational finance story',
     suggestedTopic: userHint || `${categoryLabel} tips for Indians`,
     recommendedTone: 'educational',
-    hook: 'Most Indians make this mistake every month.',
-    script: 'You earn money.\nYou spend money.\nYou save nothing.\n\nThis is the cycle.\n\nBreak it today.',
-    caption: 'Time to change the money game! Follow for more.',
-    hashtags: ['#IndianFinance', '#MoneyTips', '#SIP'],
-    cta: 'Follow for daily money tips',
-    hookImageText: 'You earn Rs.50,000/month.\nYou spend Rs.49,000.\nYou save Rs.1,000.\n\nYou think that is not enough.\n\nBut it is enough to start.',
-    contentImageText: 'Rs.1,000/month SIP\nAt 12% CAGR for 20 years\n= Rs.9.9 lakh\n\nStart small.\nStart now.\nTime beats amount.',
+    hook: `${seed.names[0]} and ${seed.names[1]} both earn Rs.${seed.salary.toLocaleString('en-IN')}/month. One will retire rich. One won't.`,
+    script: `${seed.names[0]} and ${seed.names[1]}.\nSame salary. Same age.\n\nDifferent one decision.\n\n${seed.years} years later.\nThe gap is Rs.1 crore.\n\nWhat did ${seed.names[0]} do differently?`,
+    caption: 'The one decision that changes everything. Follow for more.',
+    hashtags: ['#IndianFinance', '#SIP', '#MutualFunds', '#MoneyTips'],
+    cta: 'Follow for daily finance insights',
+    hookImageText: `${seed.names[0]} and ${seed.names[1]}.\nBoth ${seed.age1} years old.\nBoth earn Rs.${seed.salary.toLocaleString('en-IN')}/month.\n\n${seed.names[0]} invests Rs.${seed.sipAmount.toLocaleString('en-IN')}/month in SIP.\n${seed.names[1]} keeps it in savings account.\n\nAfter ${seed.years} years...`,
+    contentImageText: `${seed.names[0]}'s SIP corpus: Rs.${Math.round(seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) / 100000)} lakh\n${seed.names[1]}'s savings: Rs.${Math.round(seed.sipAmount * seed.years * 12 * 1.035 / 100000)} lakh\n\nDifference: Rs.${Math.round((seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) - seed.sipAmount * seed.years * 12 * 1.035) / 100000)} lakh\n\nSame money. Same years.\nDifferent decision.`,
+    comparisonHookText: `${seed.names[0]} vs ${seed.names[1]}.\nSame Rs.${seed.sipAmount.toLocaleString('en-IN')}/month.\nSame ${seed.years} years.\n\nOne chose SIP.\nOne chose FD.\n\nThe difference will shock you.`,
+    comparisonContentText: `SIP at 12% CAGR:\nRs.${Math.round(seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) / 100000)} lakh\n\nFD at 6.5%:\nRs.${Math.round(seed.sipAmount * ((Math.pow(1 + 0.065/12, seed.years*12) - 1) / (0.065/12)) / 100000)} lakh\n\nGap: Rs.${Math.round((seed.sipAmount * ((Math.pow(1 + 0.12/12, seed.years*12) - 1) / (0.12/12)) - seed.sipAmount * ((Math.pow(1 + 0.065/12, seed.years*12) - 1) / (0.065/12))) / 100000)} lakh\n\nThat is the cost of playing it safe.`,
     contentIdeas: [
-      `${categoryLabel} mistake most Indians make`,
-      `How to start ${categoryLabel} with Rs.500`,
-      `${categoryLabel} truth nobody tells you`,
+      `${categoryLabel}: PPF vs ELSS over ${seed.years} years`,
+      `${categoryLabel}: NPS vs mutual fund for retirement`,
+      `${categoryLabel}: Gold vs equity over ${seed.years} years`,
     ],
   }
 }
