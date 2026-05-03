@@ -35,6 +35,12 @@ export default function PreviewPage() {
   const [generatingVideo, setGeneratingVideo] = useState(false)
   const [videoUrl, setVideoUrl] = useState('')
   const [videoError, setVideoError] = useState('')
+  // Regenerate + Edit state
+  const [regenerating, setRegenerating] = useState(false)
+  const [editPrompt, setEditPrompt] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editSummary, setEditSummary] = useState('')
+  const [showEditBox, setShowEditBox] = useState(false)
 
   useEffect(() => {
     fetchContent()
@@ -100,6 +106,46 @@ export default function PreviewPage() {
       await fetch(`/api/content/${reelId}/reject`, { method: 'POST' })
       router.push('/dashboard')
     } catch {}
+  }
+
+  const handleRegenerate = async () => {
+    setRegenerating(true)
+    setError('')
+    try {
+      const response = await fetch(`/api/content/${reelId}/regenerate`, { method: 'POST' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Regeneration failed')
+      // Reload the page to show new content
+      window.location.reload()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
+  const handleEdit = async () => {
+    if (!editPrompt.trim()) return
+    setEditing(true)
+    setError('')
+    setEditSummary('')
+    try {
+      const response = await fetch(`/api/content/${reelId}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ editPrompt }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Edit failed')
+      setEditSummary(result.data.editSummary || 'Content updated')
+      setEditPrompt('')
+      // Reload to show updated content
+      setTimeout(() => window.location.reload(), 1500)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setEditing(false)
+    }
   }
 
   const copyToClipboard = (text: string, label: string) => {
@@ -501,6 +547,94 @@ export default function PreviewPage() {
                     <Sparkles className="w-4 h-4 mr-2" /> Generate New Version
                   </Button>
                 </Link>
+              </CardContent>
+            </Card>
+
+            {/* Regenerate — fresh version same topic */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-blue-500" />
+                  Regenerate
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-gray-500">
+                  Creates a completely fresh version with different names, numbers, and moral line — same topic.
+                </p>
+                <Button
+                  onClick={handleRegenerate}
+                  disabled={regenerating}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {regenerating
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Regenerating...</>
+                    : <><Sparkles className="w-4 h-4 mr-2" /> Generate Different Version</>
+                  }
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Edit with prompt */}
+            <Card className="border-2 border-orange-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  ✏️ Edit with Prompt
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-gray-500">
+                  Describe what to change — the script and images will update accordingly.
+                </p>
+                <div className="space-y-2">
+                  <textarea
+                    value={editPrompt}
+                    onChange={(e) => setEditPrompt(e.target.value)}
+                    placeholder="e.g., Make the tone more urgent, change the investment to NPS vs PPF, add more specific numbers, make it shorter..."
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-orange-400 resize-none"
+                    rows={3}
+                    disabled={editing}
+                  />
+                  <Button
+                    onClick={handleEdit}
+                    disabled={editing || !editPrompt.trim()}
+                    className="w-full bg-orange-500 hover:bg-orange-600"
+                  >
+                    {editing
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Applying edits...</>
+                      : '✏️ Apply Edit'
+                    }
+                  </Button>
+                  {editSummary && (
+                    <div className="p-2 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-xs text-green-700">
+                        <CheckCircle className="w-3 h-3 inline mr-1" />
+                        {editSummary} — reloading...
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {/* Quick edit suggestions */}
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-400 font-medium">Quick edits:</p>
+                  {[
+                    'Make it more urgent and shocking',
+                    'Add more specific Indian statistics',
+                    'Change to a doctor vs engineer comparison',
+                    'Make the moral line more powerful',
+                    'Shorten the script by 30%',
+                  ].map(suggestion => (
+                    <button
+                      key={suggestion}
+                      onClick={() => setEditPrompt(suggestion)}
+                      disabled={editing}
+                      className="block w-full text-left text-xs px-2 py-1.5 border rounded hover:bg-orange-50 hover:border-orange-300 transition-colors text-gray-600"
+                    >
+                      → {suggestion}
+                    </button>
+                  ))}
+                </div>
               </CardContent>
             </Card>
 
