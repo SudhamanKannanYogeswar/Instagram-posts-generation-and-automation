@@ -19,6 +19,8 @@ export interface GeneratedContent {
   hashtags: string[]
   cta: string
   imagePrompts: string[]
+  hookImageText: string    // formatted text for hook image card
+  contentImageText: string // formatted text for content image card
 }
 
 export async function generateFinanceContent(
@@ -35,20 +37,54 @@ Write in simple, conversational English that every Indian can understand. Avoid 
   const userPrompt = `Create a viral Instagram Reel script for Indian audience about: ${topic}
 
 Requirements:
-1. HOOK (first 3 seconds): Shocking or relatable Indian fact/question. Use ₹ amounts Indians relate to (e.g. ₹10,000 salary, ₹500 savings).
+1. HOOK (first 3 seconds): Shocking or relatable Indian fact/question. Use rupee amounts Indians relate to.
 2. SCRIPT (30-60 seconds): Simple, actionable advice with Indian examples. Use SIP, FD, mutual funds, Zerodha/Groww where relevant.
 3. CAPTION: Engaging caption with emojis, mix of English and common Hindi words (like "yaar", "bhai", "sahi hai")
 4. HASHTAGS: 10-15 relevant hashtags including Indian ones like #IndianFinance #SIP #MutualFunds #MoneyTipsIndia
 5. CTA: Strong call-to-action relevant to Indian audience
-${includeStats ? '6. Include real Indian statistics (e.g. "Only 3% of Indians invest in stocks", "Average Indian saves only 2% of income")' : ''}
+${includeStats ? '6. Include real Indian statistics (e.g. "Only 3% of Indians invest in stocks")' : ''}
+
+IMPORTANT - Also generate text for 2 image cards:
+
+IMAGE 1 - HOOK CARD:
+Pure text, no emojis, black background style.
+Should be a shocking/relatable opening statement that stops the scroll.
+Format it like a story opening - short punchy lines, use rupee amounts, real scenarios.
+Example style:
+"Age: 32. Software Engineer.
+Monthly Salary: Rs.80,000
+Monthly SIP: Rs.0
+Reason: 'I will start next month.'
+Next month never came.
+10 years passed."
+
+IMAGE 2 - CONTENT CARD:
+Pure text, no emojis, black background style.
+The actual valuable content - facts, steps, or breakdown.
+Format with clear structure - use line breaks between points.
+Use rupee amounts, percentages, real Indian fund names where relevant.
+Example style:
+"Rs.5,000 SIP started at age 25
+vs
+Rs.10,000 SIP started at age 35
+
+At 60, the Rs.5,000 SIP gives more.
+
+Why?
+Compounding needs time, not just money.
+
+Start small. Start now.
+Time in market beats timing the market."
 
 Format your response as JSON:
 {
   "hook": "The opening hook (1 sentence, Indian context)",
-  "script": "Full script with Indian examples and ₹ amounts",
+  "script": "Full script with Indian examples and rupee amounts",
   "caption": "Instagram caption with emojis and Indian flavour",
   "hashtags": ["hashtag1", "hashtag2", ...],
-  "cta": "Call to action for Indian audience"
+  "cta": "Call to action for Indian audience",
+  "hookImageText": "Multi-line text for hook image card (no emojis, use \\n for line breaks)",
+  "contentImageText": "Multi-line text for content image card (no emojis, use \\n for line breaks)"
 }`
 
   try {
@@ -148,12 +184,9 @@ function normalizeContent(parsed: any): GeneratedContent {
     caption: String(parsed.caption || ''),
     hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String) : [],
     cta: String(parsed.cta || ''),
-    imagePrompts: Array.isArray(parsed.imagePrompts)
-      ? parsed.imagePrompts.map(String)
-      : [
-          'Modern minimalist finance background with money symbols and growth charts',
-          'Professional financial illustration with coins and upward trending graph',
-        ],
+    imagePrompts: [],
+    hookImageText: String(parsed.hookImageText || parsed.hook || ''),
+    contentImageText: String(parsed.contentImageText || parsed.script || ''),
   }
 }
 
@@ -179,12 +212,9 @@ function extractWithRegex(text: string): GeneratedContent {
     caption: extract('caption'),
     hashtags: extractArray('hashtags'),
     cta: extract('cta'),
-    imagePrompts: extractArray('imagePrompts').length > 0
-      ? extractArray('imagePrompts')
-      : [
-          'Modern minimalist finance background with money symbols',
-          'Professional financial growth chart illustration',
-        ],
+    imagePrompts: [],
+    hookImageText: extract('hookImageText') || extract('hook'),
+    contentImageText: extract('contentImageText') || extract('script'),
   }
 }
 

@@ -54,11 +54,12 @@ export async function POST(request: NextRequest) {
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
     // 4. Generate images — Image 1: hook card, Image 2: content card
+    // Use the LLM-generated image text (formatted for the card style)
     const shortTopic = topic.substring(0, 80)
     const imageUrls = await generateReelImages(
       shortTopic,
-      generatedContent.hook,
-      generatedContent.script
+      generatedContent.hookImageText || generatedContent.hook,
+      generatedContent.contentImageText || generatedContent.script
     )
 
     const imageResults = await Promise.allSettled(
