@@ -21,8 +21,11 @@ export interface GeneratedContent {
   hashtags: string[]
   cta: string
   imagePrompts: string[]
-  hookImageText: string    // formatted text for hook image card
-  contentImageText: string // formatted text for content image card
+  hookImageText: string
+  contentImageText: string
+  // Version 2 — comparison style
+  comparisonHookText: string
+  comparisonContentText: string
 }
 
 export async function generateFinanceContent(
@@ -42,65 +45,44 @@ Tone: ${tone}`
 
   const userPrompt = `Create a viral Instagram Reel for Indian audience about: ${topic}
 
-QUALITY RULES — your content must:
-1. Use a COMPARISON (Person A vs Person B, or Choice A vs Choice B) — this is mandatory
-2. Use SPECIFIC numbers (not Rs.10,000 — use Rs.8,340 or Rs.12,500)
-3. Include a TWIST or SURPRISING FACT that most people don't know
-4. Reference REAL Indian life: salary credit day, Diwali shopping, EMI due date, office canteen, etc.
-5. Make the reader feel "this is exactly my situation"
-6. NO generic advice like "start saving" — give SPECIFIC actionable insight
+You are writing for people who already know the basics. Make it SPECIFIC, SURPRISING, STORY-DRIVEN.
 
-FORMAT RULES:
-- Short punchy lines only. NO paragraphs.
-- Blank lines between sections.
+RULES FOR ALL CONTENT:
+- Use SPECIFIC numbers (Rs.8,340 not Rs.10,000 — odd numbers feel real)
+- Use REAL Indian names: Rahul, Priya, Arjun, Meera, Vikram, Ananya, Karthik, Sneha
+- Reference REAL Indian life: salary credit day, Diwali bonus, EMI due date, office canteen
+- Include a TWIST or SURPRISING FACT most people don't know
+- Short punchy lines only. NO paragraphs. Blank lines between sections.
 - NO emojis in script or image text.
-- Build tension, then reveal the twist.
-- End with a question that makes them think.
+${includeStats ? '- Include real Indian statistics and specific fund/platform data.' : ''}
 
-COMPARISON EXAMPLE (use this style for hookImageText):
-"Arjun and Vikram both earn Rs.65,000/month.
-Both are 27 years old.
-Both have the same expenses.
+---
 
-Arjun puts Rs.8,000 in FD every month.
-Vikram puts Rs.8,000 in SIP every month.
+VERSION 1 — STORY/FACTS (no comparison):
+A deep-dive into one person's journey OR a surprising fact breakdown.
+Show the BEFORE and AFTER of one person's decision.
+Include specific numbers, dates, amounts.
+End with a question that makes them think.
 
-At age 50:
-Arjun has Rs.38 lakh.
-Vikram has Rs.1.4 crore.
+VERSION 2 — COMPARISON (two people, same start, different outcome):
+Two real Indian names. Same age. Same salary. Same starting point.
+Different ONE decision.
+Show the shocking difference 10-20 years later.
+Make the reader feel "I am making the wrong choice right now."
 
-Same salary. Same years. Same amount.
-Different decision."
-
-CONTENT BREAKDOWN EXAMPLE (use this style for contentImageText):
-"Why the difference?
-
-FD gives 6-7% returns.
-Inflation is 6%.
-Real return: almost zero.
-
-SIP in equity gives 12-15% CAGR.
-After inflation: 6-9% real return.
-
-Rs.8,000/month for 23 years:
-FD: Rs.38 lakh
-SIP: Rs.1.4 crore
-
-The gap: Rs.1.02 crore.
-
-That is the cost of playing it safe."
-
-${includeStats ? 'Include real Indian statistics and specific fund performance data.' : ''}
+---
 
 Return as JSON:
 {
   "hook": "one powerful hook line that creates curiosity or shock",
-  "script": "full script with comparison story, short punchy lines, blank lines between sections, ends with a question",
+  "script": "full story/facts script — short punchy lines, blank lines between sections, ends with a question",
   "caption": "Instagram caption with emojis",
   "hashtags": ["tag1", "tag2", "tag3"],
   "cta": "call to action",
-  "hookImageText": "comparison story - two real Indian names, specific numbers, same starting point, shocking difference at the end. NO emojis. Blank lines between sections.",
-  "contentImageText": "the WHY breakdown - specific numbers, percentages, the surprising reason behind the difference. NO emojis. Blank lines between points."
+  "hookImageText": "VERSION 1 hook card — story/facts opening, real scenario, specific numbers, NO emojis, blank lines between sections",
+  "contentImageText": "VERSION 1 content card — deep breakdown with specific numbers, surprising insight, NO emojis, blank lines between points",
+  "comparisonHookText": "VERSION 2 hook card — two Indian names, same starting point, one different decision, NO emojis, blank lines between sections",
+  "comparisonContentText": "VERSION 2 content card — the shocking numbers showing the difference, WHY it happened, NO emojis, blank lines between points"
 }`
 
   try {
@@ -203,6 +185,8 @@ function normalizeContent(parsed: any): GeneratedContent {
     imagePrompts: [],
     hookImageText: String(parsed.hookImageText || parsed.hook || ''),
     contentImageText: String(parsed.contentImageText || parsed.script || ''),
+    comparisonHookText: String(parsed.comparisonHookText || parsed.hookImageText || parsed.hook || ''),
+    comparisonContentText: String(parsed.comparisonContentText || parsed.contentImageText || parsed.script || ''),
   }
 }
 
@@ -231,6 +215,8 @@ function extractWithRegex(text: string): GeneratedContent {
     imagePrompts: [],
     hookImageText: extract('hookImageText') || extract('hook'),
     contentImageText: extract('contentImageText') || extract('script'),
+    comparisonHookText: extract('comparisonHookText') || extract('hookImageText') || extract('hook'),
+    comparisonContentText: extract('comparisonContentText') || extract('contentImageText') || extract('script'),
   }
 }
 

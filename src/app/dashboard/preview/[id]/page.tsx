@@ -286,64 +286,84 @@ export default function PreviewPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     🖼️ Generated Images
-                    <span className="text-xs font-normal text-gray-500">(black + white text cards)</span>
+                    <span className="text-xs font-normal text-gray-500">(5 cards — story + comparison)</span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Combined image — featured prominently */}
-                  {images.find((img: any) => img.image_type === 'combined') && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                          Combined Card (Hook + Content)
-                        </p>
-                        <a
-                          href={images.find((img: any) => img.image_type === 'combined')?.image_url}
-                          download="combined-card.jpg"
-                          className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                        >
-                          <Download className="w-3 h-3" /> Download
-                        </a>
-                      </div>
-                      <div className="aspect-[9/16] rounded-xl overflow-hidden border-2 border-blue-400 max-w-[240px] mx-auto">
-                        <img
-                          src={images.find((img: any) => img.image_type === 'combined')?.image_url}
-                          alt="Combined card"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
+                <CardContent className="space-y-6">
+
+                  {/* ── VERSION 1: Story / Facts ── */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">Version 1 — Story / Facts</span>
                     </div>
-                  )}
-                  {/* Individual cards side by side */}
-                  <div className="grid grid-cols-2 gap-3">
-                    {images
-                      .filter((img: any) => img.image_type !== 'combined')
-                      .map((img: any, i: number) => {
-                        const label = img.image_type === 'background' ? 'Hook Card' : 'Content Card'
-                        const filename = img.image_type === 'background' ? 'hook-card.jpg' : 'content-card.jpg'
+                    {/* Combined card */}
+                    {images.find((img: any) => img.image_type === 'combined') && (
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs font-medium text-gray-500">Combined (Hook + Content)</p>
+                          <a href={images.find((img: any) => img.image_type === 'combined')?.image_url} download="story-combined.jpg" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                            <Download className="w-3 h-3" /> Download
+                          </a>
+                        </div>
+                        <div className="aspect-[9/16] rounded-xl overflow-hidden border-2 border-blue-300 max-w-[200px] mx-auto">
+                          <img src={images.find((img: any) => img.image_type === 'combined')?.image_url} alt="Combined" className="w-full h-full object-cover" />
+                        </div>
+                      </div>
+                    )}
+                    {/* Hook + Content side by side */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { type: 'story_hook',    label: 'Hook Card',    file: 'story-hook.jpg'    },
+                        { type: 'story_content', label: 'Content Card', file: 'story-content.jpg' },
+                      ].map(({ type, label, file }) => {
+                        const img = images.find((i: any) => i.image_type === type)
+                        if (!img) return null
                         return (
-                          <div key={i}>
+                          <div key={type}>
                             <div className="flex items-center justify-between mb-1.5">
                               <p className="text-xs font-medium text-gray-500">{label}</p>
-                              <a
-                                href={img.image_url}
-                                download={filename}
-                                className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                              >
+                              <a href={img.image_url} download={file} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
                                 <Download className="w-3 h-3" /> Save
                               </a>
                             </div>
                             <div className="aspect-[9/16] rounded-lg overflow-hidden border border-gray-200">
-                              <img
-                                src={img.image_url}
-                                alt={label}
-                                className="w-full h-full object-cover"
-                              />
+                              <img src={img.image_url} alt={label} className="w-full h-full object-cover" />
                             </div>
                           </div>
                         )
                       })}
+                    </div>
                   </div>
+
+                  {/* ── VERSION 2: Comparison ── */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Version 2 — Comparison (Person A vs B)</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { type: 'comp_hook',    label: 'Hook Card',    file: 'comparison-hook.jpg'    },
+                        { type: 'comp_content', label: 'Content Card', file: 'comparison-content.jpg' },
+                      ].map(({ type, label, file }) => {
+                        const img = images.find((i: any) => i.image_type === type)
+                        if (!img) return null
+                        return (
+                          <div key={type}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <p className="text-xs font-medium text-gray-500">{label}</p>
+                              <a href={img.image_url} download={file} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                <Download className="w-3 h-3" /> Save
+                              </a>
+                            </div>
+                            <div className="aspect-[9/16] rounded-lg overflow-hidden border border-purple-200">
+                              <img src={img.image_url} alt={label} className="w-full h-full object-cover" />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
                 </CardContent>
               </Card>
             )}

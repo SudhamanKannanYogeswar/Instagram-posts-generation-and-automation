@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { generateFinanceContent } from '@/lib/openai'
-import { generateReelImages } from '@/lib/image-generator'
+import { generateHookImage, generateContentImage, generateCombinedImage } from '@/lib/image-generator'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Topic is required' }, { status: 400 })
     }
 
-    // 1. Create content request record
+    // 1. Create content request
     const { data: contentRequest, error: requestError } = await supabaseAdmin
       .from('content_requests')
       .insert({
@@ -26,13 +26,12 @@ export async function POST(request: NextRequest) {
 
     if (requestError) throw new Error('Failed to create content request: ' + requestError.message)
 
-    // 2. Use pre-generated content (from image analysis) OR generate via LLM
-    let generatedContent: any
-    if (preGeneratedContent && preGeneratedContent.hook) {
-      // Image analysis already generated full content — use it directly
-      generatedContent = preGeneratedContent
+    // 2. Generate or use pre-generated content
+    let gc: any
+    if (preGeneratedContent?.hook) {
+      gc = preGeneratedContent
     } else {
-      generatedContent = await generateFinanceContent({
+      gc = await generateFinanceContent({
         topic,
         tone: tone || 'educational',
         includeStats: true,
@@ -40,18 +39,17 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 3. Save generated content — truncate topic to 250 chars to fit VARCHAR(255)
-    const safeTopic = topic.substring(0, 250)
+    // 3. Save content
     const { data: content, error: contentError } = await supabaseAdmin
       .from('generated_content')
       .insert({
         request_id: contentRequest.id,
-        hook: generatedContent.hook,
-        script: generatedContent.script,
-        caption: generatedContent.caption,
-        hashtags: generatedContent.hashtags,
-        cta: generatedContent.cta,
-        topic: safeTopic,
+        hook: gc.hook,
+        script: gc.script,
+        caption: gc.caption,
+        hashtags: gc.hashtags,
+        cta: gc.cta,
+        topic: topic.substring(0, 250),
         tone: tone || 'educational',
       })
       .select()
@@ -59,25 +57,44 @@ export async function POST(request: NextRequest) {
 
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
-    // 4. Generate images — 3 cards: hook, content, combined
-    const shortTopic = topic.substring(0, 80)
-    const imageUrls = await generateReelImages(
-      shortTopic,
-      generatedContent.hookImageText || generatedContent.hook,
-      generatedContent.contentImageText || generatedContent.script
-    )
+    // 4. Generate 5 images in parallel:
+    //    [0] story_hook     — Version 1 hook card
+    //    [1] story_content  — Version 1 content card
+    //    [2] story_combined — Version 1 combined (hook + content)
+    //    [3] comp_hook      — Version 2 comparison hook card
+    //    [4] comp_content   — Version 2 comparison content card
 
-    const imageTypes = ['hook', 'content', 'combined']
+    const storyHookText    = gc.hookImageText    || gc.hook   || topic
+    const storyContentText = gc.contentImageText || gc.script || topic
+    const compHookText     = gc.comparisonHookText    || storyHookText
+    const compContentText  = gc.comparisonContentText || storyContentText
+
+    const [img0, img1, img2, img3, img4] = await Promise.all([
+      generateHookImage(storyHookText),
+      generateContentImage(storyContentText),
+      generateCombinedImage(storyHookText, storyContentText),
+      generateHookImage(compHookText),
+      generateContentImage(compContentText),
+    ])
+
+    const imageDefs = [
+      { url: img0, type: 'story_hook',     prompt: 'story_hook'     },
+      { url: img1, type: 'story_content',  prompt: 'story_content'  },
+      { url: img2, type: 'combined',       prompt: 'combined'       },
+      { url: img3, type: 'comp_hook',      prompt: 'comp_hook'      },
+      { url: img4, type: 'comp_content',   prompt: 'comp_content'   },
+    ]
+
     const imageResults = await Promise.allSettled(
-      imageUrls.map(async (imageUrl, index) => {
+      imageDefs.map(async (def, index) => {
         const { data: imgRecord } = await supabaseAdmin
           .from('generated_images')
           .insert({
             content_id: content.id,
-            image_url: imageUrl,
+            image_url: def.url,
             storage_path: `generated/${content.id}/image_${index}.jpg`,
-            prompt: imageTypes[index],
-            image_type: index === 0 ? 'background' : index === 1 ? 'overlay' : 'combined',
+            prompt: def.prompt,
+            image_type: def.type,
             width: 1080,
             height: 1920,
           })
@@ -97,7 +114,7 @@ export async function POST(request: NextRequest) {
       .update({ status: 'completed' })
       .eq('id', contentRequest.id)
 
-    // 6. Create reel entry
+    // 6. Create reel
     const { data: reel } = await supabaseAdmin
       .from('reels')
       .insert({

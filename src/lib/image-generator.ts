@@ -1,13 +1,13 @@
 /**
  * Finance image generator — canvas-based, no SVG
  *
- * Layout:
- * - Pure black background
- * - Text vertically centred on the canvas
- * - Clear paragraph gaps (blank lines = visible space)
- * - First line of each paragraph slightly larger / bolder
- * - Horizontal rule between paragraphs for visual separation
- * - Left-aligned text (like the reference images)
+ * Instagram Reels safe zones:
+ *   Top:    ~200px (profile info, back button)
+ *   Bottom: ~350px (like/comment/share buttons, caption)
+ *   Left/Right: 80px
+ *
+ * Text is vertically centred within the SAFE ZONE (not the full canvas).
+ * Paragraph gaps are rendered as visible space + subtle divider line.
  */
 
 import { createCanvas, SKRSContext2D, GlobalFonts } from '@napi-rs/canvas'
@@ -16,8 +16,14 @@ import * as fs from 'fs'
 
 const W = 1080
 const H = 1920
-const PAD_X = 80   // left/right margin
-const TEXT_W = W - PAD_X * 2
+
+// Instagram safe zone — text must stay within this area
+const SAFE_TOP    = 220   // avoid profile/back button
+const SAFE_BOTTOM = 360   // avoid like/comment/share/caption
+const SAFE_LEFT   = 80
+const SAFE_RIGHT  = 80
+const SAFE_H      = H - SAFE_TOP - SAFE_BOTTOM   // usable height = 1340px
+const TEXT_W      = W - SAFE_LEFT - SAFE_RIGHT    // usable width  = 920px
 
 // ── Font loading ──────────────────────────────────────────────────────────────
 
@@ -25,11 +31,11 @@ let fontsLoaded = false
 
 function ensureFonts() {
   if (fontsLoaded) return
-  const fontDir = path.join(process.cwd(), 'public', 'fonts')
-  const regular = path.join(fontDir, 'Roboto-Regular.ttf')
-  const bold    = path.join(fontDir, 'Roboto-Bold.ttf')
-  if (fs.existsSync(regular)) GlobalFonts.registerFromPath(regular, 'Roboto')
-  if (fs.existsSync(bold))    GlobalFonts.registerFromPath(bold, 'Roboto')
+  const dir = path.join(process.cwd(), 'public', 'fonts')
+  const reg = path.join(dir, 'Roboto-Regular.ttf')
+  const bld = path.join(dir, 'Roboto-Bold.ttf')
+  if (fs.existsSync(reg)) GlobalFonts.registerFromPath(reg, 'Roboto')
+  if (fs.existsSync(bld)) GlobalFonts.registerFromPath(bld, 'Roboto')
   fontsLoaded = true
 }
 
@@ -52,7 +58,6 @@ function sanitise(text: string): string {
     .replace(/\u00A0/g, ' ')
 }
 
-/** Word-wrap a single line to fit within TEXT_W at given fontSize */
 function wrapLine(ctx: SKRSContext2D, text: string, fontSize: number): string[] {
   ctx.font = `${fontSize}px ${FONT}`
   const words = text.split(' ')
@@ -72,204 +77,180 @@ function wrapLine(ctx: SKRSContext2D, text: string, fontSize: number): string[] 
 
 // ── Paragraph model ───────────────────────────────────────────────────────────
 
-interface Para {
-  lines: string[]
-  isFirst: boolean   // first paragraph gets slightly larger font
-}
+interface Para { lines: string[]; isFirst: boolean }
 
 function parseParagraphs(raw: string): Para[] {
-  const normalised = sanitise(raw)
-  const blocks = normalised.split(/\n{2,}/).map(b => b.trim()).filter(b => b.length > 0)
+  const blocks = sanitise(raw)
+    .split(/\n{2,}/)
+    .map(b => b.trim())
+    .filter(b => b.length > 0)
   return blocks.map((block, i) => ({
     lines: block.split('\n').map(l => l.trim()).filter(l => l.length > 0),
     isFirst: i === 0,
   }))
 }
 
-// ── Measure total rendered height ────────────────────────────────────────────
+// ── Measure & render ──────────────────────────────────────────────────────────
 
-interface RenderConfig {
+interface Cfg {
   baseFontSize: number
-  lineHeight: number    // multiplier
-  paraGap: number       // px between paragraphs
-  ruleHeight: number    // px for the separator line + its margins
+  lineH: number    // multiplier
+  paraGap: number  // px between paragraphs
+  ruleH: number    // px for divider line + margins
 }
 
-function measureHeight(
-  ctx: SKRSContext2D,
-  paras: Para[],
-  cfg: RenderConfig
-): number {
+function measureH(ctx: SKRSContext2D, paras: Para[], cfg: Cfg): number {
   let h = 0
-  for (let pi = 0; pi < paras.length; pi++) {
-    const para = paras[pi]
-    const fs = para.isFirst ? cfg.baseFontSize + 6 : cfg.baseFontSize
-    const lh = fs * cfg.lineHeight
-    for (const line of para.lines) {
-      const wrapped = wrapLine(ctx, line, fs)
-      h += wrapped.length * lh
+  for (let i = 0; i < paras.length; i++) {
+    const fs = paras[i].isFirst ? cfg.baseFontSize + 4 : cfg.baseFontSize
+    for (const line of paras[i].lines) {
+      h += wrapLine(ctx, line, fs).length * (fs * cfg.lineH)
     }
-    if (pi < paras.length - 1) {
-      h += cfg.paraGap + cfg.ruleHeight
-    }
+    if (i < paras.length - 1) h += cfg.paraGap + cfg.ruleH
   }
   return h
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-
-function renderToCanvas(
+function renderText(
   ctx: SKRSContext2D,
   paras: Para[],
-  cfg: RenderConfig,
-  startY: number
+  cfg: Cfg,
+  startY: number,
+  safeTop: number,
+  safeH: number
 ) {
-  let curY = startY
-
-  for (let pi = 0; pi < paras.length; pi++) {
-    const para = paras[pi]
-    const fs = para.isFirst ? cfg.baseFontSize + 6 : cfg.baseFontSize
-    const lh = fs * cfg.lineHeight
+  let y = startY
+  for (let i = 0; i < paras.length; i++) {
+    const para = paras[i]
+    const fs   = para.isFirst ? cfg.baseFontSize + 4 : cfg.baseFontSize
+    const lh   = fs * cfg.lineH
 
     for (let li = 0; li < para.lines.length; li++) {
-      const line = para.lines[li]
-      const wrapped = wrapLine(ctx, line, fs)
-
-      // First line of first paragraph = bold + slightly larger
-      const isBold = pi === 0 && li === 0
-      ctx.font = isBold ? `bold ${fs + 4}px ${FONT}` : `${fs}px ${FONT}`
+      const isBold = i === 0 && li === 0
+      ctx.font      = isBold ? `bold ${fs + 2}px ${FONT}` : `${fs}px ${FONT}`
       ctx.fillStyle = 'white'
       ctx.textBaseline = 'top'
 
-      for (const wl of wrapped) {
-        ctx.fillText(wl, PAD_X, curY)
-        curY += lh
+      for (const wl of wrapLine(ctx, para.lines[li], fs)) {
+        ctx.fillText(wl, SAFE_LEFT, y)
+        y += lh
       }
     }
 
-    // Paragraph separator
-    if (pi < paras.length - 1) {
-      curY += cfg.paraGap * 0.5
-
-      // Draw a subtle horizontal rule
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)'
-      ctx.lineWidth = 1.5
+    if (i < paras.length - 1) {
+      y += cfg.paraGap * 0.5
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+      ctx.lineWidth   = 1.5
       ctx.beginPath()
-      ctx.moveTo(PAD_X, curY)
-      ctx.lineTo(W - PAD_X, curY)
+      ctx.moveTo(SAFE_LEFT, y)
+      ctx.lineTo(W - SAFE_RIGHT, y)
       ctx.stroke()
-
-      curY += cfg.ruleHeight + cfg.paraGap * 0.5
+      y += cfg.ruleH + cfg.paraGap * 0.5
     }
   }
 }
 
-// ── Build one image ───────────────────────────────────────────────────────────
+// ── Build one card ────────────────────────────────────────────────────────────
 
-async function buildCard(rawText: string, baseFontSize: number): Promise<string> {
+async function buildCard(
+  rawText: string,
+  baseFontSize: number,
+  safeTop = SAFE_TOP,
+  safeH   = SAFE_H
+): Promise<string> {
   ensureFonts()
-
   const canvas = createCanvas(W, H)
   const ctx    = canvas.getContext('2d')
 
-  // Black background
   ctx.fillStyle = '#000000'
   ctx.fillRect(0, 0, W, H)
 
   const paras = parseParagraphs(rawText)
   if (paras.length === 0) {
-    const buf = await canvas.encode('jpeg', 95)
-    return `data:image/jpeg;base64,${buf.toString('base64')}`
+    return `data:image/jpeg;base64,${(await canvas.encode('jpeg', 95)).toString('base64')}`
   }
 
-  // Start with desired font size, shrink until content fits
-  let cfg: RenderConfig = {
-    baseFontSize,
-    lineHeight: 1.65,
-    paraGap: 36,
-    ruleHeight: 24,
-  }
-
-  const MAX_H = H - 160  // 80px top + 80px bottom padding
-
-  while (cfg.baseFontSize > 32) {
-    const totalH = measureHeight(ctx, paras, cfg)
-    if (totalH <= MAX_H) break
+  // Auto-scale font to fit within safe zone
+  let cfg: Cfg = { baseFontSize, lineH: 1.65, paraGap: 40, ruleH: 28 }
+  while (cfg.baseFontSize > 30) {
+    if (measureH(ctx, paras, cfg) <= safeH - 40) break
     cfg = { ...cfg, baseFontSize: cfg.baseFontSize - 2 }
   }
 
-  // Vertically centre the text block
-  const totalH = measureHeight(ctx, paras, cfg)
-  const startY = Math.max(80, (H - totalH) / 2)
+  // Vertically centre within safe zone
+  const totalH = measureH(ctx, paras, cfg)
+  const startY = safeTop + Math.max(20, (safeH - totalH) / 2)
 
-  renderToCanvas(ctx, paras, cfg, startY)
+  renderText(ctx, paras, cfg, startY, safeTop, safeH)
 
-  const buf = await canvas.encode('jpeg', 95)
-  return `data:image/jpeg;base64,${buf.toString('base64')}`
+  return `data:image/jpeg;base64,${(await canvas.encode('jpeg', 95)).toString('base64')}`
 }
 
-// ── Combined image (hook top half + content bottom half) ──────────────────────
+// ── Combined card (hook top half + content bottom half) ───────────────────────
 
 async function buildCombined(hookText: string, contentText: string): Promise<string> {
   ensureFonts()
-
   const canvas = createCanvas(W, H)
   const ctx    = canvas.getContext('2d')
 
   ctx.fillStyle = '#000000'
   ctx.fillRect(0, 0, W, H)
 
-  const HALF = H / 2
+  const MID = H / 2
 
-  // ── Top half: hook ──
+  // Top half safe zone
+  const topSafeTop = SAFE_TOP
+  const topSafeH   = MID - SAFE_TOP - 40   // 40px buffer above divider
+
+  // Bottom half safe zone
+  const botSafeTop = MID + 40              // 40px buffer below divider
+  const botSafeH   = H - botSafeTop - SAFE_BOTTOM
+
+  // Render hook in top half
   const hookParas = parseParagraphs(hookText)
-  let hookCfg: RenderConfig = { baseFontSize: 62, lineHeight: 1.65, paraGap: 32, ruleHeight: 22 }
-  while (hookCfg.baseFontSize > 28) {
-    if (measureHeight(ctx, hookParas, hookCfg) <= HALF - 100) break
+  let hookCfg: Cfg = { baseFontSize: 60, lineH: 1.65, paraGap: 36, ruleH: 24 }
+  while (hookCfg.baseFontSize > 26) {
+    if (measureH(ctx, hookParas, hookCfg) <= topSafeH - 20) break
     hookCfg = { ...hookCfg, baseFontSize: hookCfg.baseFontSize - 2 }
   }
-  const hookH   = measureHeight(ctx, hookParas, hookCfg)
-  const hookY   = Math.max(60, (HALF - hookH) / 2)
-  renderToCanvas(ctx, hookParas, hookCfg, hookY)
+  const hookH  = measureH(ctx, hookParas, hookCfg)
+  const hookY  = topSafeTop + Math.max(10, (topSafeH - hookH) / 2)
+  renderText(ctx, hookParas, hookCfg, hookY, topSafeTop, topSafeH)
 
-  // ── Divider ──
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)'
-  ctx.lineWidth = 2
+  // Divider line
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+  ctx.lineWidth   = 2
   ctx.beginPath()
-  ctx.moveTo(60, HALF)
-  ctx.lineTo(W - 60, HALF)
+  ctx.moveTo(60, MID)
+  ctx.lineTo(W - 60, MID)
   ctx.stroke()
 
-  // ── Bottom half: content ──
+  // Render content in bottom half
   const contentParas = parseParagraphs(contentText)
-  let contentCfg: RenderConfig = { baseFontSize: 54, lineHeight: 1.65, paraGap: 28, ruleHeight: 20 }
-  while (contentCfg.baseFontSize > 26) {
-    if (measureHeight(ctx, contentParas, contentCfg) <= HALF - 100) break
+  let contentCfg: Cfg = { baseFontSize: 52, lineH: 1.65, paraGap: 32, ruleH: 22 }
+  while (contentCfg.baseFontSize > 24) {
+    if (measureH(ctx, contentParas, contentCfg) <= botSafeH - 20) break
     contentCfg = { ...contentCfg, baseFontSize: contentCfg.baseFontSize - 2 }
   }
-  const contentH = measureHeight(ctx, contentParas, contentCfg)
-  const contentY = HALF + Math.max(60, (HALF - contentH) / 2)
-  renderToCanvas(ctx, contentParas, contentCfg, contentY)
+  const contentH = measureH(ctx, contentParas, contentCfg)
+  const contentY = botSafeTop + Math.max(10, (botSafeH - contentH) / 2)
+  renderText(ctx, contentParas, contentCfg, contentY, botSafeTop, botSafeH)
 
-  const buf = await canvas.encode('jpeg', 95)
-  return `data:image/jpeg;base64,${buf.toString('base64')}`
+  return `data:image/jpeg;base64,${(await canvas.encode('jpeg', 95)).toString('base64')}`
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function generateHookImage(hookImageText: string): Promise<string> {
-  return buildCard(hookImageText, 68)
+export async function generateHookImage(text: string): Promise<string> {
+  return buildCard(text, 66)
 }
 
-export async function generateContentImage(contentImageText: string): Promise<string> {
-  return buildCard(contentImageText, 60)
+export async function generateContentImage(text: string): Promise<string> {
+  return buildCard(text, 58)
 }
 
-export async function generateCombinedImage(
-  hookImageText: string,
-  contentImageText: string
-): Promise<string> {
-  return buildCombined(hookImageText, contentImageText)
+export async function generateCombinedImage(hookText: string, contentText: string): Promise<string> {
+  return buildCombined(hookText, contentText)
 }
 
 export async function generateReelImages(
@@ -277,21 +258,20 @@ export async function generateReelImages(
   hookImageText?: string,
   contentImageText?: string
 ): Promise<string[]> {
-  const hookText    = hookImageText    || topic
-  const contentText = contentImageText || topic
-
-  const [img1, img2, img3] = await Promise.all([
-    generateHookImage(hookText),
-    generateContentImage(contentText),
-    generateCombinedImage(hookText, contentText),
+  const h = hookImageText    || topic
+  const c = contentImageText || topic
+  const [i1, i2, i3] = await Promise.all([
+    generateHookImage(h),
+    generateContentImage(c),
+    generateCombinedImage(h, c),
   ])
-  return [img1, img2, img3]
+  return [i1, i2, i3]
 }
 
 export async function generateFinanceImage(
   topic: string,
   type: 'background' | 'overlay' = 'background'
 ): Promise<string> {
-  const images = await generateReelImages(topic)
-  return type === 'background' ? images[0] : images[1]
+  const imgs = await generateReelImages(topic)
+  return type === 'background' ? imgs[0] : imgs[1]
 }
