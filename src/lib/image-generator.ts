@@ -13,10 +13,42 @@
  *   Image 3 (combined)— hook on top half, content on bottom half (single image)
  */
 
-import { createCanvas, SKRSContext2D } from '@napi-rs/canvas'
+import { createCanvas, SKRSContext2D, GlobalFonts } from '@napi-rs/canvas'
+import * as path from 'path'
+import * as fs from 'fs'
 
 const W = 1080
 const H = 1920
+
+// ── Load bundled fonts (works on any server including Vercel Linux) ───────────
+
+let fontsLoaded = false
+
+function ensureFonts() {
+  if (fontsLoaded) return
+
+  // Fonts are in public/fonts/ — resolve relative to project root
+  const fontDir = path.join(process.cwd(), 'public', 'fonts')
+
+  const regular = path.join(fontDir, 'Roboto-Regular.ttf')
+  const bold    = path.join(fontDir, 'Roboto-Bold.ttf')
+
+  if (fs.existsSync(regular)) {
+    GlobalFonts.registerFromPath(regular, 'Roboto')
+    console.log('Loaded Roboto Regular')
+  } else {
+    console.warn('Roboto-Regular.ttf not found at', regular)
+  }
+
+  if (fs.existsSync(bold)) {
+    GlobalFonts.registerFromPath(bold, 'Roboto')
+    console.log('Loaded Roboto Bold')
+  }
+
+  fontsLoaded = true
+}
+
+const FONT_FAMILY = 'Roboto, Arial, sans-serif'
 
 // ── Text utilities ────────────────────────────────────────────────────────────
 
@@ -121,7 +153,7 @@ function renderText(
     let h = startY + paddingTop
 
     for (let pi = 0; pi < paragraphs.length; pi++) {
-      ctx.font = `${fs}px Arial`
+      ctx.font = `${fs}px ${FONT_FAMILY}`
       for (const line of paragraphs[pi]) {
         const wrapped = wrapLine(ctx, line, maxTextW)
         h += wrapped.length * lh
@@ -140,7 +172,7 @@ function renderText(
   const lh = fs * lineHeightMultiplier
   const pg = fs * paraGapMultiplier
 
-  ctx.font = `${fs}px Arial`
+  ctx.font = `${fs}px ${FONT_FAMILY}`
   ctx.fillStyle = 'white'
   ctx.textBaseline = 'top'
 
@@ -148,7 +180,7 @@ function renderText(
 
   for (let pi = 0; pi < paragraphs.length; pi++) {
     for (const line of paragraphs[pi]) {
-      ctx.font = `${fs}px Arial`
+      ctx.font = `${fs}px ${FONT_FAMILY}`
       const wrapped = wrapLine(ctx, line, maxTextW)
       for (const wl of wrapped) {
         ctx.fillText(wl, paddingLeft, curY)
@@ -167,6 +199,7 @@ function renderText(
 
 /** Generate hook image card — black bg, white text */
 export async function generateHookImage(hookImageText: string): Promise<string> {
+  ensureFonts()
   const canvas = createCanvas(W, H)
   const ctx = canvas.getContext('2d')
 
@@ -188,6 +221,7 @@ export async function generateHookImage(hookImageText: string): Promise<string> 
 
 /** Generate content image card — black bg, white text */
 export async function generateContentImage(contentImageText: string): Promise<string> {
+  ensureFonts()
   const canvas = createCanvas(W, H)
   const ctx = canvas.getContext('2d')
 
@@ -217,6 +251,7 @@ export async function generateCombinedImage(
   hookImageText: string,
   contentImageText: string
 ): Promise<string> {
+  ensureFonts()
   const canvas = createCanvas(W, H)
   const ctx = canvas.getContext('2d')
 

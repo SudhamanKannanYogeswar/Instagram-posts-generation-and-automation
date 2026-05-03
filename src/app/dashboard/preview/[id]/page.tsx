@@ -293,9 +293,18 @@ export default function PreviewPage() {
                   {/* Combined image — featured prominently */}
                   {images.find((img: any) => img.image_type === 'combined') && (
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-                        Combined Card (Hook + Content)
-                      </p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          Combined Card (Hook + Content)
+                        </p>
+                        <a
+                          href={images.find((img: any) => img.image_type === 'combined')?.image_url}
+                          download="combined-card.jpg"
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" /> Download
+                        </a>
+                      </div>
                       <div className="aspect-[9/16] rounded-xl overflow-hidden border-2 border-blue-400 max-w-[240px] mx-auto">
                         <img
                           src={images.find((img: any) => img.image_type === 'combined')?.image_url}
@@ -309,20 +318,31 @@ export default function PreviewPage() {
                   <div className="grid grid-cols-2 gap-3">
                     {images
                       .filter((img: any) => img.image_type !== 'combined')
-                      .map((img: any, i: number) => (
-                        <div key={i}>
-                          <p className="text-xs font-medium text-gray-500 mb-1.5 capitalize">
-                            {img.image_type === 'background' ? 'Hook Card' : 'Content Card'}
-                          </p>
-                          <div className="aspect-[9/16] rounded-lg overflow-hidden border border-gray-200">
-                            <img
-                              src={img.image_url}
-                              alt={img.image_type}
-                              className="w-full h-full object-cover"
-                            />
+                      .map((img: any, i: number) => {
+                        const label = img.image_type === 'background' ? 'Hook Card' : 'Content Card'
+                        const filename = img.image_type === 'background' ? 'hook-card.jpg' : 'content-card.jpg'
+                        return (
+                          <div key={i}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <p className="text-xs font-medium text-gray-500">{label}</p>
+                              <a
+                                href={img.image_url}
+                                download={filename}
+                                className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                              >
+                                <Download className="w-3 h-3" /> Save
+                              </a>
+                            </div>
+                            <div className="aspect-[9/16] rounded-lg overflow-hidden border border-gray-200">
+                              <img
+                                src={img.image_url}
+                                alt={label}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                   </div>
                 </CardContent>
               </Card>
