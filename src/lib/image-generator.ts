@@ -1,42 +1,41 @@
 /**
- * Finance image generator — pure text cards
- *
- * Style: exactly like the reference images
- * - Pure black (#000000) background
- * - White text, left-aligned
- * - Clean sans-serif font
- * - NO emojis, NO decorations, NO borders
- * - Just the text, laid out like a story
- *
- * Image 1: Hook card  — stops the scroll
- * Image 2: Content card — delivers the value
+ * Finance image generator
+ * Pure black background, white text, left-aligned
+ * Exactly like the reference images — story format, no emojis
  */
 
 import sharp from 'sharp'
 
 const W = 1080
 const H = 1920
+const PADDING_L = 80   // left margin
+const PADDING_R = 80   // right margin
+const PADDING_T = 120  // top margin
+const TEXT_W = W - PADDING_L - PADDING_R  // 920px usable width
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function esc(s: string) {
+/** Strip emojis and escape XML special chars */
+function clean(s: string): string {
   return s
+    // Remove emoji ranges
+    .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{FE00}-\u{FEFF}]/gu, '')
+    // XML escape
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    // Strip any emoji characters that sneak through
-    .replace(/[\u{1F300}-\u{1FFFF}]/gu, '')
-    .replace(/[\u{2600}-\u{26FF}]/gu, '')
-    .replace(/[\u{2700}-\u{27BF}]/gu, '')
+    .trim()
 }
 
-/** Wrap a single line of text to fit within maxWidth pixels at given fontSize */
-function wrapLine(text: string, fontSize: number, maxWidth: number): string[] {
-  // Approximate character width = fontSize * 0.52 for Arial
-  const charW = fontSize * 0.52
-  const maxChars = Math.floor(maxWidth / charW)
-
+/**
+ * Word-wrap a single line to fit within TEXT_W at given fontSize.
+ * Uses approximate char width = fontSize * 0.54 for Arial.
+ */
+function wrapText(text: string, fontSize: number): string[] {
+  const maxChars = Math.floor(TEXT_W / (fontSize * 0.54))
   const words = text.split(' ')
   const lines: string[] = []
   let cur = ''
@@ -51,148 +50,132 @@ function wrapLine(text: string, fontSize: number, maxWidth: number): string[] {
     }
   }
   if (cur) lines.push(cur)
-  return lines
+  return lines.length > 0 ? lines : ['']
 }
 
 /**
- * Build SVG for a pure black text card.
- *
- * @param rawText  The text content — use \n for line breaks, blank line for paragraph gap
- * @param fontSize Base font size in px
+ * Parse raw text into paragraphs.
+ * Handles both literal \n (from JSON) and actual newlines.
  */
-function buildTextCardSvg(rawText: string, fontSize: number): Buffer {
-  const PADDING_X = 72   // left/right margin
-  const PADDING_Y = 140  // top margin
-  const MAX_TEXT_W = W - PADDING_X * 2
-  const LINE_H = fontSize * 1.55
-  const PARA_GAP = fontSize * 0.9  // extra gap between paragraphs (blank lines)
+function parseParagraphs(raw: string): string[][] {
+  // Normalise: replace escaped \n with real newline
+  const normalised = raw
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
 
-  // Parse paragraphs (split on blank lines)
-  const paragraphs = rawText
-    .replace(/\\n/g, '\n')   // handle escaped newlines from JSON
-    .split(/\n\n+/)
+  // Split into paragraphs on blank lines
+  const paragraphs = normalised
+    .split(/\n{2,}/)
     .map(p => p.trim())
     .filter(p => p.length > 0)
 
-  // Build all rendered lines with their Y positions
-  interface RenderLine {
-    text: string
-    y: number
-    isBold: boolean
-  }
+  // Each paragraph is an array of lines
+  return paragraphs.map(p =>
+    p.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+  )
+}
 
-  const renderLines: RenderLine[] = []
-  let curY = PADDING_Y + fontSize
+// ── SVG builder ───────────────────────────────────────────────────────────────
 
-  for (let pi = 0; pi < paragraphs.length; pi++) {
-    const para = paragraphs[pi]
-    const rawLines = para.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+/**
+ * Build a pure black SVG text card.
+ * Renders paragraphs with spacing between them, exactly like the reference images.
+ */
+function buildSvg(rawText: string, baseFontSize: number): Buffer {
+  const paragraphs = parseParagraphs(rawText)
 
-    for (const rawLine of rawLines) {
-      // Detect if this line should be bold (short lines, headings, or lines with numbers/Rs)
-      const isBold = rawLine.length < 40 || /^Rs\.|^\d|^[A-Z][A-Z]/.test(rawLine)
-
-      const wrapped = wrapLine(rawLine, fontSize, MAX_TEXT_W)
-      for (const wl of wrapped) {
-        renderLines.push({ text: wl, y: curY, isBold })
-        curY += LINE_H
-      }
-    }
-
-    // Add paragraph gap after each paragraph (except last)
-    if (pi < paragraphs.length - 1) {
-      curY += PARA_GAP
-    }
-  }
-
-  // If content overflows, scale down font size
-  const totalH = curY + PADDING_Y
-  const scaleNeeded = totalH > H ? H / totalH : 1
-  const effectiveFontSize = scaleNeeded < 1 ? Math.floor(fontSize * scaleNeeded * 0.92) : fontSize
-
-  // Re-render with scaled font if needed
-  let finalLines = renderLines
-  if (scaleNeeded < 1) {
-    const scaledLineH = effectiveFontSize * 1.55
-    const scaledParaGap = effectiveFontSize * 0.9
-    const scaledLines: RenderLine[] = []
-    let sy = PADDING_Y + effectiveFontSize
+  // First pass: calculate total height to check if we need to scale down
+  function calcHeight(fs: number): number {
+    const lineH = fs * 1.6
+    const paraGap = fs * 1.2
+    let h = PADDING_T
 
     for (let pi = 0; pi < paragraphs.length; pi++) {
-      const para = paragraphs[pi]
-      const rawLines = para.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-      for (const rawLine of rawLines) {
-        const isBold = rawLine.length < 40 || /^Rs\.|^\d|^[A-Z][A-Z]/.test(rawLine)
-        const wrapped = wrapLine(rawLine, effectiveFontSize, MAX_TEXT_W)
-        for (const wl of wrapped) {
-          scaledLines.push({ text: wl, y: sy, isBold })
-          sy += scaledLineH
-        }
+      for (const line of paragraphs[pi]) {
+        const wrapped = wrapText(line, fs)
+        h += wrapped.length * lineH
       }
-      if (pi < paragraphs.length - 1) sy += scaledParaGap
+      if (pi < paragraphs.length - 1) h += paraGap
     }
-    finalLines = scaledLines
+    h += PADDING_T
+    return h
   }
 
-  const fs = effectiveFontSize
+  // Scale font down if content overflows
+  let fs = baseFontSize
+  while (calcHeight(fs) > H - 40 && fs > 36) {
+    fs -= 2
+  }
 
-  const textEls = finalLines.map(({ text, y, isBold }) => {
-    const weight = isBold ? '700' : '400'
-    return `<text
-      x="${PADDING_X}"
-      y="${y}"
-      font-family="Arial, Helvetica, sans-serif"
-      font-weight="${weight}"
-      font-size="${fs}"
-      fill="white"
-      dominant-baseline="auto"
-    >${esc(text)}</text>`
-  }).join('\n')
+  const lineH = fs * 1.6
+  const paraGap = fs * 1.2
 
-  return Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <rect width="${W}" height="${H}" fill="#000000"/>
-    ${textEls}
-  </svg>`)
+  // Second pass: build SVG text elements
+  const elements: string[] = []
+  let curY = PADDING_T + fs
+
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    for (const line of paragraphs[pi]) {
+      const wrapped = wrapText(line, fs)
+      for (const wl of wrapped) {
+        const cleaned = clean(wl)
+        if (cleaned) {
+          elements.push(
+            `<text x="${PADDING_L}" y="${Math.round(curY)}"` +
+            ` font-family="Arial, Helvetica, sans-serif"` +
+            ` font-size="${fs}"` +
+            ` font-weight="400"` +
+            ` fill="white"` +
+            ` dominant-baseline="auto"` +
+            `>${cleaned}</text>`
+          )
+        }
+        curY += lineH
+      }
+    }
+    if (pi < paragraphs.length - 1) {
+      curY += paraGap
+    }
+  }
+
+  return Buffer.from(
+    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect width="${W}" height="${H}" fill="#000000"/>` +
+    elements.join('') +
+    `</svg>`
+  )
+}
+
+// ── Render image ──────────────────────────────────────────────────────────────
+
+async function renderCard(rawText: string, fontSize: number): Promise<string> {
+  const svg = buildSvg(rawText, fontSize)
+
+  const buf = await sharp({
+    create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
+  })
+    .composite([{ input: svg, blend: 'over' }])
+    .jpeg({ quality: 95 })
+    .toBuffer()
+
+  return `data:image/jpeg;base64,${buf.toString('base64')}`
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/**
- * Generate the hook image card.
- * Pure black background, white text, left-aligned.
- */
 export async function generateHookImage(hookImageText: string): Promise<string> {
-  const svg = buildTextCardSvg(hookImageText, 68)
-
-  const buf = await sharp({
-    create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
-  })
-    .composite([{ input: svg, blend: 'over' }])
-    .jpeg({ quality: 95 })
-    .toBuffer()
-
-  return `data:image/jpeg;base64,${buf.toString('base64')}`
+  return renderCard(hookImageText, 68)
 }
 
-/**
- * Generate the content image card.
- * Pure black background, white text, left-aligned.
- */
 export async function generateContentImage(contentImageText: string): Promise<string> {
-  const svg = buildTextCardSvg(contentImageText, 60)
-
-  const buf = await sharp({
-    create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
-  })
-    .composite([{ input: svg, blend: 'over' }])
-    .jpeg({ quality: 95 })
-    .toBuffer()
-
-  return `data:image/jpeg;base64,${buf.toString('base64')}`
+  return renderCard(contentImageText, 60)
 }
 
 /**
- * Generate both reel images.
+ * Generate both reel images in parallel.
  * Returns [hookImage, contentImage]
  */
 export async function generateReelImages(

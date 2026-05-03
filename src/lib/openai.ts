@@ -28,63 +28,78 @@ export async function generateFinanceContent(
 ): Promise<GeneratedContent> {
   const { topic, tone = 'educational', includeStats = true } = params
 
-  const systemPrompt = `You are an expert Indian finance content creator specialising in viral Instagram Reels for the Indian audience.
-Your content uses Indian context: rupees (₹), SIP, mutual funds, FD, PPF, EPF, LIC, Zerodha, Groww, SEBI, NSE/BSE, Indian salary ranges, Indian cost of living.
-Use relatable Indian examples: chai, auto-rickshaw, EMI, salary day, Diwali bonus, etc.
-Tone: ${tone}
-Write in simple, conversational English that every Indian can understand. Avoid jargon.`
+  const systemPrompt = `You are an expert Indian finance content creator who writes viral Instagram Reels scripts.
 
-  const userPrompt = `Create a viral Instagram Reel script for Indian audience about: ${topic}
+CRITICAL RULES:
+- Write ONLY in short, punchy lines — never long paragraphs
+- Each line should be 1 sentence or less
+- Use blank lines between sections for breathing room
+- Use real Indian numbers: Rs.500, Rs.10,000, Rs.2L, Rs.1 Cr
+- Reference real Indian things: SIP, FD, PPF, Zerodha, Groww, HDFC, SBI, Nifty, CAGR
+- Write like you are telling a story to a friend
+- NO emojis anywhere in the script or image text
+- Tone: ${tone}`
 
-Requirements:
-1. HOOK (first 3 seconds): Shocking or relatable Indian fact/question. Use rupee amounts Indians relate to.
-2. SCRIPT (30-60 seconds): Simple, actionable advice with Indian examples. Use SIP, FD, mutual funds, Zerodha/Groww where relevant.
-3. CAPTION: Engaging caption with emojis, mix of English and common Hindi words (like "yaar", "bhai", "sahi hai")
-4. HASHTAGS: 10-15 relevant hashtags including Indian ones like #IndianFinance #SIP #MutualFunds #MoneyTipsIndia
-5. CTA: Strong call-to-action relevant to Indian audience
-${includeStats ? '6. Include real Indian statistics (e.g. "Only 3% of Indians invest in stocks")' : ''}
+  const userPrompt = `Create a viral Instagram Reel for Indian audience about: ${topic}
 
-IMPORTANT - Also generate text for 2 image cards:
+SCRIPT FORMAT — write exactly like this style:
+Short line.
+Another short line.
 
-IMAGE 1 - HOOK CARD:
-Pure text, no emojis, black background style.
-Should be a shocking/relatable opening statement that stops the scroll.
-Format it like a story opening - short punchy lines, use rupee amounts, real scenarios.
-Example style:
-"Age: 32. Software Engineer.
-Monthly Salary: Rs.80,000
-Monthly SIP: Rs.0
-Reason: 'I will start next month.'
-Next month never came.
-10 years passed."
+New thought starts here.
+Keep it punchy.
 
-IMAGE 2 - CONTENT CARD:
-Pure text, no emojis, black background style.
-The actual valuable content - facts, steps, or breakdown.
-Format with clear structure - use line breaks between points.
-Use rupee amounts, percentages, real Indian fund names where relevant.
-Example style:
-"Rs.5,000 SIP started at age 25
-vs
-Rs.10,000 SIP started at age 35
+Use real numbers.
+Rs.5,000 SIP for 20 years = Rs.66 lakh.
 
-At 60, the Rs.5,000 SIP gives more.
+End with a question or insight.
 
-Why?
-Compounding needs time, not just money.
+---
 
-Start small. Start now.
-Time in market beats timing the market."
+IMAGE TEXT FORMAT — look at these examples carefully and match the style exactly:
 
-Format your response as JSON:
+HOOK IMAGE EXAMPLE (for a topic about SIP):
+"You earn Rs.80,000/month.
+You spend Rs.79,000.
+You save Rs.1,000.
+
+You think that's not enough to invest.
+
+But your colleague started Rs.1,000 SIP at 25.
+He is 40 now.
+His SIP is worth Rs.9.2 lakh.
+
+You are still waiting for the right time."
+
+CONTENT IMAGE EXAMPLE (for a topic about SIP):
+"Rs.1,000 SIP started at age 25
+
+At 12% CAGR for 15 years = Rs.9.2 lakh
+
+Same Rs.1,000 started at age 35
+
+At 12% CAGR for 5 years = Rs.81,000
+
+Difference: Rs.8.4 lakh
+
+Just because of 10 years.
+
+Time is the real investment.
+Not the amount."
+
+---
+
+Now generate for the topic: ${topic}
+
+Return as JSON with these exact fields:
 {
-  "hook": "The opening hook (1 sentence, Indian context)",
-  "script": "Full script with Indian examples and rupee amounts",
-  "caption": "Instagram caption with emojis and Indian flavour",
-  "hashtags": ["hashtag1", "hashtag2", ...],
-  "cta": "Call to action for Indian audience",
-  "hookImageText": "Multi-line text for hook image card (no emojis, use \\n for line breaks)",
-  "contentImageText": "Multi-line text for content image card (no emojis, use \\n for line breaks)"
+  "hook": "one line hook sentence",
+  "script": "the full script in short punchy lines with blank lines between sections — NO paragraphs",
+  "caption": "Instagram caption with emojis",
+  "hashtags": ["tag1", "tag2"],
+  "cta": "call to action",
+  "hookImageText": "the hook image text — short punchy lines, story format, NO emojis, blank lines between sections, use Rs. for rupees",
+  "contentImageText": "the content image text — data/facts/steps format, NO emojis, blank lines between points, use Rs. for rupees"
 }`
 
   try {
