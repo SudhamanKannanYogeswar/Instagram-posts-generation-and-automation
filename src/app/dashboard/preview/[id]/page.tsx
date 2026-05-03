@@ -340,6 +340,20 @@ export default function PreviewPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Version 2 — Comparison (Person A vs B)</span>
                     </div>
+                    {/* Comparison combined card */}
+                    {images.find((img: any) => img.image_type === 'comp_combined') && (
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs font-medium text-gray-500">Combined (Hook + Content)</p>
+                          <a href={images.find((img: any) => img.image_type === 'comp_combined')?.image_url} download="comparison-combined.jpg" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                            <Download className="w-3 h-3" /> Download
+                          </a>
+                        </div>
+                        <div className="aspect-[9/16] rounded-xl overflow-hidden border-2 border-purple-300 max-w-[200px] mx-auto">
+                          <img src={images.find((img: any) => img.image_type === 'comp_combined')?.image_url} alt="Comparison Combined" className="w-full h-full object-cover" />
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         { type: 'comp_hook',    label: 'Hook Card',    file: 'comparison-hook.jpg'    },

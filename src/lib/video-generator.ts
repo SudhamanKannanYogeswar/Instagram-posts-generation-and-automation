@@ -1,7 +1,7 @@
 /**
- * Server-side video generation using sharp + ffmpeg-static
- * Creates Instagram Reels (9:16, 1080x1920) from images + text overlays
- * No local installs needed — everything bundled via npm
+ * Server-side video generation using sharp + system ffmpeg
+ * On Vercel (Linux): uses /usr/bin/ffmpeg which is available on all Vercel instances
+ * On Windows (local dev): uses the winget-installed ffmpeg
  */
 
 import sharp from 'sharp'
@@ -10,9 +10,38 @@ import * as path from 'path'
 import * as os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import ffmpegBin from 'ffmpeg-static'
 
 const execFileAsync = promisify(execFile)
+
+/** Find ffmpeg — checks multiple locations for cross-platform support */
+async function getFfmpeg(): Promise<string> {
+  const candidates = [
+    // Linux (Vercel, Railway, Render, etc.)
+    '/usr/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    // Windows (winget install)
+    `${process.env.LOCALAPPDATA}\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe`,
+    // Windows (chocolatey)
+    'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
+    // PATH fallback
+    'ffmpeg',
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    try {
+      await execFileAsync(candidate, ['-version'])
+      return candidate
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error(
+    'ffmpeg not found. On Vercel it should be at /usr/bin/ffmpeg. ' +
+    'Locally: winget install Gyan.FFmpeg or brew install ffmpeg'
+  )
+}
 
 const WIDTH = 1080
 const HEIGHT = 1920
@@ -136,12 +165,6 @@ async function buildFrame(
     .toBuffer()
 }
 
-/** Get the bundled ffmpeg binary path */
-function getFfmpeg(): string {
-  if (ffmpegBin) return ffmpegBin
-  throw new Error('ffmpeg-static binary not found. Run: npm install')
-}
-
 /** Split text into n roughly equal chunks by sentence */
 function splitIntoChunks(text: string, n: number): string[] {
   const sentences = text.match(/[^.!?]+[.!?]+/g) || [text]
@@ -226,7 +249,7 @@ export async function generateReelVideo(params: VideoGenerationParams): Promise<
 
   // --- Assemble MP4 ---
   const videoPath = path.join(tmpDir, 'reel.mp4')
-  const ffmpeg = getFfmpeg()
+  const ffmpeg = await getFfmpeg()
 
   await execFileAsync(ffmpeg, [
     '-f', 'concat',

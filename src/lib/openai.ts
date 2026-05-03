@@ -43,46 +43,57 @@ You always include a COMPARISON between two people or two choices — this is th
 You write like a storyteller, not a teacher.
 Tone: ${tone}`
 
+  // Inject randomness so numbers vary every generation
+  const seed = {
+    age1: 24 + Math.floor(Math.random() * 6),        // 24-29
+    age2: 30 + Math.floor(Math.random() * 8),        // 30-37
+    salary: [45000, 52000, 58000, 65000, 72000, 80000][Math.floor(Math.random() * 6)],
+    sipAmount: [3000, 5000, 7500, 8000, 10000, 12000][Math.floor(Math.random() * 6)],
+    years: [15, 18, 20, 22, 25][Math.floor(Math.random() * 5)],
+    cagr1: [11, 12, 13, 14, 15][Math.floor(Math.random() * 5)],
+    cagr2: [5, 6, 7][Math.floor(Math.random() * 3)],
+    investment1: ['HDFC Flexi Cap Fund', 'Mirae Asset Large Cap', 'Parag Parikh Flexi Cap', 'Axis Bluechip Fund', 'SBI Small Cap Fund'][Math.floor(Math.random() * 5)],
+    investment2: ['FD', 'RD', 'LIC endowment plan', 'Post Office MIS', 'savings account'][Math.floor(Math.random() * 5)],
+    names: [['Rahul', 'Arjun'], ['Priya', 'Meera'], ['Karthik', 'Vikram'], ['Ananya', 'Sneha'], ['Rohan', 'Amit']][Math.floor(Math.random() * 5)],
+  }
+
   const userPrompt = `Create a viral Instagram Reel for Indian audience about: ${topic}
 
-You are writing for people who already know the basics. Make it SPECIFIC, SURPRISING, STORY-DRIVEN.
+RANDOMIZED SCENARIO (use these EXACT values — do not change them):
+- Names: ${seed.names[0]} and ${seed.names[1]}
+- Age: ${seed.age1} years old
+- Monthly salary: Rs.${seed.salary.toLocaleString('en-IN')}
+- Monthly investment amount: Rs.${seed.sipAmount.toLocaleString('en-IN')}
+- Time period: ${seed.years} years
+- Investment 1 (smart choice): ${seed.investment1} at ${seed.cagr1}% CAGR
+- Investment 2 (poor choice): ${seed.investment2} at ${seed.cagr2}% returns
+- Calculate the EXACT corpus for both using compound interest formula
 
-RULES FOR ALL CONTENT:
-- Use SPECIFIC numbers (Rs.8,340 not Rs.10,000 — odd numbers feel real)
-- Use REAL Indian names: Rahul, Priya, Arjun, Meera, Vikram, Ananya, Karthik, Sneha
-- Reference REAL Indian life: salary credit day, Diwali bonus, EMI due date, office canteen
-- Include a TWIST or SURPRISING FACT most people don't know
-- Short punchy lines only. NO paragraphs. Blank lines between sections.
-- NO emojis in script or image text.
-${includeStats ? '- Include real Indian statistics and specific fund/platform data.' : ''}
+CONTENT QUALITY RULES:
+1. Calculate EXACT corpus values using: P * ((1+r)^n - 1) / r where r = monthly rate
+   - Smart choice corpus = Rs.${seed.sipAmount} * ((1+${seed.cagr1/100}/12)^${seed.years*12} - 1) / (${seed.cagr1/100}/12)
+   - Poor choice corpus = Rs.${seed.sipAmount} * ${seed.years * 12} * (1 + ${seed.cagr2/100}/2) [approximate for FD/RD]
+2. Show the EXACT rupee difference — not approximate
+3. Include WHY the difference happens (compounding, inflation, real returns)
+4. Reference real Indian context: salary credit day, EMI, Diwali bonus
+5. End with a question that makes them think about their own money
+6. NO generic advice — every line must have specific data
 
----
+FORMAT: Short punchy lines. Blank lines between sections. NO emojis. NO paragraphs.
 
-VERSION 1 — STORY/FACTS (no comparison):
-A deep-dive into one person's journey OR a surprising fact breakdown.
-Show the BEFORE and AFTER of one person's decision.
-Include specific numbers, dates, amounts.
-End with a question that makes them think.
-
-VERSION 2 — COMPARISON (two people, same start, different outcome):
-Two real Indian names. Same age. Same salary. Same starting point.
-Different ONE decision.
-Show the shocking difference 10-20 years later.
-Make the reader feel "I am making the wrong choice right now."
-
----
+${includeStats ? 'Include: inflation rate (6%), real returns after inflation, tax implications where relevant.' : ''}
 
 Return as JSON:
 {
-  "hook": "one powerful hook line that creates curiosity or shock",
-  "script": "full story/facts script — short punchy lines, blank lines between sections, ends with a question",
+  "hook": "one powerful hook using the exact names and scenario",
+  "script": "full script with exact calculated numbers, short punchy lines, blank lines between sections",
   "caption": "Instagram caption with emojis",
   "hashtags": ["tag1", "tag2", "tag3"],
   "cta": "call to action",
-  "hookImageText": "VERSION 1 hook card — story/facts opening, real scenario, specific numbers, NO emojis, blank lines between sections",
-  "contentImageText": "VERSION 1 content card — deep breakdown with specific numbers, surprising insight, NO emojis, blank lines between points",
-  "comparisonHookText": "VERSION 2 hook card — two Indian names, same starting point, one different decision, NO emojis, blank lines between sections",
-  "comparisonContentText": "VERSION 2 content card — the shocking numbers showing the difference, WHY it happened, NO emojis, blank lines between points"
+  "hookImageText": "VERSION 1 story hook — ${seed.names[0]}'s journey, specific numbers, NO emojis, blank lines between sections",
+  "contentImageText": "VERSION 1 content — exact corpus breakdown, real returns, inflation impact, NO emojis, blank lines between points",
+  "comparisonHookText": "VERSION 2 comparison hook — ${seed.names[0]} vs ${seed.names[1]}, same Rs.${seed.sipAmount.toLocaleString('en-IN')}/month, different choice, NO emojis, blank lines",
+  "comparisonContentText": "VERSION 2 comparison content — exact calculated corpus for both, the gap in Rs., WHY it happened, NO emojis, blank lines"
 }`
 
   try {

@@ -64,12 +64,13 @@ export async function POST(request: NextRequest) {
     const compHookText     = gc.comparisonHookText    || storyHookText
     const compContentText  = gc.comparisonContentText || storyContentText
 
-    const [img0, img1, img2, img3, img4] = await Promise.all([
+    const [img0, img1, img2, img3, img4, img5] = await Promise.all([
       generateHookImage(storyHookText, isFinance),
       generateContentImage(storyContentText, isFinance),
       generateCombinedImage(storyHookText, storyContentText, isFinance),
       generateHookImage(compHookText, isFinance),
       generateContentImage(compContentText, isFinance),
+      generateCombinedImage(compHookText, compContentText, isFinance),  // comparison combined
     ])
 
     const imageDefs = [
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest) {
       { url: img2, type: 'combined',       prompt: 'combined'       },
       { url: img3, type: 'comp_hook',      prompt: 'comp_hook'      },
       { url: img4, type: 'comp_content',   prompt: 'comp_content'   },
+      { url: img5, type: 'comp_combined',  prompt: 'comp_combined'  },
     ]
 
     const imageResults = await Promise.allSettled(
