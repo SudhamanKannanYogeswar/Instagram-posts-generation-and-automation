@@ -66,10 +66,14 @@ function CreateReelForm() {
 
       const response = await fetch('/api/analyze-image', { method: 'POST', body: formData })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error)
+      if (!response.ok) {
+        if (data.code === 'TIMEOUT') {
+          throw new Error('Vision AI timed out. Try a smaller/simpler image, or switch to "Write Topic" mode and describe what you want.')
+        }
+        throw new Error(data.error)
+      }
 
       setImageAnalysis(data.analysis)
-      // Pre-fill topic and tone from analysis
       if (data.analysis.suggestedTopic) setTopic(data.analysis.suggestedTopic)
       if (data.analysis.recommendedTone) setTone(data.analysis.recommendedTone)
     } catch (err: any) {
@@ -333,7 +337,7 @@ function CreateReelForm() {
                 {imagePreview && !imageAnalysis && (
                   <Button onClick={handleAnalyzeImage} disabled={isAnalyzing} variant="outline" className="w-full">
                     {isAnalyzing
-                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analysing with Mistral Vision AI...</>
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analysing with AI Vision... (up to 30s)</>
                       : <><Sparkles className="w-4 h-4 mr-2" /> Analyse Image & Generate Content</>
                     }
                   </Button>
