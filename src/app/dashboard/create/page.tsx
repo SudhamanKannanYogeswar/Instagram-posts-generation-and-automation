@@ -138,7 +138,14 @@ function CreateReelForm() {
       let enrichedTopic = topic.trim()
 
       if (inputMode === 'image' && imageAnalysis) {
-        enrichedTopic = `${topic}. Visual context: ${imageAnalysis.style}. Key elements: ${imageAnalysis.visualElements?.join(', ')}`
+        // Pass rich Mistral vision context to content generator
+        const ctx = [
+          imageAnalysis.subject && `Image shows: ${imageAnalysis.subject}`,
+          imageAnalysis.emotion && `Mood: ${imageAnalysis.emotion}`,
+          imageAnalysis.indianContext && `Indian context: ${imageAnalysis.indianContext}`,
+          imageAnalysis.hookIdea && `Suggested hook: ${imageAnalysis.hookIdea}`,
+        ].filter(Boolean).join('. ')
+        enrichedTopic = `${topic}. ${ctx}`
       } else if (inputMode === 'instagram' && instagramAnalysis) {
         enrichedTopic = `${topic}. Content angle: ${instagramAnalysis.contentAngle}. Key points: ${instagramAnalysis.keyPoints?.join(', ')}`
       }
@@ -312,29 +319,51 @@ function CreateReelForm() {
 
                 {/* Analysis result */}
                 {imageAnalysis && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-2 text-green-700 font-medium">
                       <CheckCircle className="w-4 h-4" />
-                      Image Analyzed!
+                      ✅ Image analysed by Mistral Vision AI
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+
+                    {/* What the AI saw */}
+                    <div className="bg-white rounded-lg p-3 border border-green-100 text-sm space-y-1.5">
                       <div>
-                        <span className="text-gray-500">Subject:</span>
+                        <span className="text-gray-500 font-medium">What AI sees:</span>
                         <span className="ml-1 text-gray-800">{imageAnalysis.subject}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Tone:</span>
-                        <span className="ml-1 text-gray-800 capitalize">{imageAnalysis.recommendedTone}</span>
+                        <span className="text-gray-500 font-medium">Emotion/mood:</span>
+                        <span className="ml-1 text-gray-800">{imageAnalysis.emotion}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 font-medium">Indian context:</span>
+                        <span className="ml-1 text-gray-800">{imageAnalysis.indianContext}</span>
                       </div>
                     </div>
+
+                    {/* Hook idea */}
+                    {imageAnalysis.hookIdea && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p className="text-xs text-yellow-700 font-medium mb-1">💡 Suggested Hook</p>
+                        <p className="text-sm text-gray-800 italic">"{imageAnalysis.hookIdea}"</p>
+                        <button
+                          onClick={() => setTopic(imageAnalysis.hookIdea)}
+                          className="text-xs text-blue-600 hover:underline mt-1"
+                        >
+                          Use this as topic →
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Content ideas */}
                     <div className="text-sm">
-                      <span className="text-gray-500">Content ideas:</span>
-                      <ul className="mt-1 space-y-1">
+                      <span className="text-gray-500 font-medium">Content ideas (click to use):</span>
+                      <ul className="mt-2 space-y-1.5">
                         {imageAnalysis.contentIdeas?.slice(0, 3).map((idea: string, i: number) => (
-                          <li key={i} className="flex items-center gap-2">
+                          <li key={i}>
                             <button
                               onClick={() => setTopic(idea)}
-                              className="text-blue-600 hover:underline text-left"
+                              className="w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors text-gray-700 text-xs"
                             >
                               → {idea}
                             </button>
@@ -566,13 +595,13 @@ function CreateReelForm() {
         {/* Image mode tips */}
         {inputMode === 'image' && (
           <div className="mt-8 bg-white border rounded-xl p-5">
-            <h3 className="font-semibold mb-3">📸 Image Tips</h3>
+            <h3 className="font-semibold mb-3">📸 How Image Analysis Works</h3>
             <ul className="text-sm text-gray-600 space-y-2">
-              <li>✅ Charts, graphs, or financial visuals work great</li>
-              <li>✅ Lifestyle images (coffee, laptop, money) generate good content</li>
-              <li>✅ Screenshots of financial data or news</li>
-              <li>✅ Your own photos related to finance topics</li>
-              <li>⚠️ AI will analyze the image and suggest relevant finance content</li>
+              <li>🤖 <strong>Mistral Large 3 Vision AI</strong> reads your image in detail</li>
+              <li>✅ Understands the scene, mood, and Indian financial context</li>
+              <li>✅ Suggests a hook, tone, and 3 content ideas specific to the image</li>
+              <li>✅ Works with charts, screenshots, lifestyle photos, news clippings</li>
+              <li>💡 The richer the image, the more relevant the content</li>
             </ul>
           </div>
         )}
