@@ -24,50 +24,47 @@ export interface GeneratedContent {
 export async function generateFinanceContent(
   params: ContentGenerationParams
 ): Promise<GeneratedContent> {
-  const { topic, tone = 'educational', targetAudience = 'young professionals', includeStats = true } = params
+  const { topic, tone = 'educational', includeStats = true } = params
 
-  const systemPrompt = `You are an expert finance content creator specializing in viral Instagram Reels. 
-Your content is engaging, accurate, and designed to hook viewers in the first 3 seconds.
-Focus on: savings, investments, personal finance, wealth building.
+  const systemPrompt = `You are an expert Indian finance content creator specialising in viral Instagram Reels for the Indian audience.
+Your content uses Indian context: rupees (₹), SIP, mutual funds, FD, PPF, EPF, LIC, Zerodha, Groww, SEBI, NSE/BSE, Indian salary ranges, Indian cost of living.
+Use relatable Indian examples: chai, auto-rickshaw, EMI, salary day, Diwali bonus, etc.
 Tone: ${tone}
-Target audience: ${targetAudience}`
+Write in simple, conversational English that every Indian can understand. Avoid jargon.`
 
-  const userPrompt = `Create a viral Instagram Reel script about: ${topic}
+  const userPrompt = `Create a viral Instagram Reel script for Indian audience about: ${topic}
 
 Requirements:
-1. HOOK (first 3 seconds): Must be attention-grabbing, controversial, or surprising
-2. SCRIPT (30-60 seconds): Clear, concise, actionable advice
-3. CAPTION: Engaging caption with emojis
-4. HASHTAGS: 10-15 relevant hashtags
-5. CTA: Strong call-to-action
-${includeStats ? '6. Include relevant statistics or numbers when possible' : ''}
+1. HOOK (first 3 seconds): Shocking or relatable Indian fact/question. Use ₹ amounts Indians relate to (e.g. ₹10,000 salary, ₹500 savings).
+2. SCRIPT (30-60 seconds): Simple, actionable advice with Indian examples. Use SIP, FD, mutual funds, Zerodha/Groww where relevant.
+3. CAPTION: Engaging caption with emojis, mix of English and common Hindi words (like "yaar", "bhai", "sahi hai")
+4. HASHTAGS: 10-15 relevant hashtags including Indian ones like #IndianFinance #SIP #MutualFunds #MoneyTipsIndia
+5. CTA: Strong call-to-action relevant to Indian audience
+${includeStats ? '6. Include real Indian statistics (e.g. "Only 3% of Indians invest in stocks", "Average Indian saves only 2% of income")' : ''}
 
 Format your response as JSON:
 {
-  "hook": "The opening hook (1 sentence)",
-  "script": "Full script with clear sections",
-  "caption": "Instagram caption with emojis",
+  "hook": "The opening hook (1 sentence, Indian context)",
+  "script": "Full script with Indian examples and ₹ amounts",
+  "caption": "Instagram caption with emojis and Indian flavour",
   "hashtags": ["hashtag1", "hashtag2", ...],
-  "cta": "Call to action",
-  "imagePrompts": ["prompt for background image", "prompt for overlay graphics"]
+  "cta": "Call to action for Indian audience"
 }`
 
   try {
     const model = process.env.OPENAI_MODEL || 'gpt-4-turbo-preview'
     const completion = await openai.chat.completions.create({
-      model: model,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      // Note: NVIDIA API may not support response_format, so we'll handle JSON parsing manually
       temperature: 0.2,
       top_p: 0.7,
       max_tokens: 2000,
     })
 
     const responseText = completion.choices[0].message.content || '{}'
-    
     const content = parseAIResponse(responseText)
     return content as GeneratedContent
   } catch (error) {

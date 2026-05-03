@@ -53,10 +53,13 @@ export async function POST(request: NextRequest) {
 
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
-    // 4. Generate images server-side (no external API needed)
-    // Use the original short topic for image generation (not the enriched one)
+    // 4. Generate images — Image 1: hook card, Image 2: content card
     const shortTopic = topic.substring(0, 80)
-    const imageUrls = await generateReelImages(shortTopic, 2)
+    const imageUrls = await generateReelImages(
+      shortTopic,
+      generatedContent.hook,
+      generatedContent.script
+    )
 
     const imageResults = await Promise.allSettled(
       imageUrls.map(async (imageUrl, index) => {
