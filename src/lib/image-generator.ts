@@ -22,11 +22,26 @@ function clean(s: string): string {
     .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
     .replace(/[\u{2600}-\u{27BF}]/gu, '')
     .replace(/[\u{FE00}-\u{FEFF}]/gu, '')
-    // XML escape
+    // Replace curly quotes with straight quotes
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    // Replace em/en dashes with hyphens
+    .replace(/[\u2013\u2014]/g, '-')
+    // Replace arrows
+    .replace(/\u2192/g, '->')
+    .replace(/\u2190/g, '<-')
+    // Replace rupee symbol with Rs.
+    .replace(/\u20B9/g, 'Rs.')
+    // Replace other common special chars
+    .replace(/\u2022/g, '*')
+    .replace(/\u25C6/g, '*')
+    .replace(/\u2714/g, '*')
+    // XML escape — MUST be last and in this order
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
     .trim()
 }
 
@@ -141,27 +156,49 @@ function buildSvg(rawText: string, baseFontSize: number): Buffer {
     }
   }
 
-  return Buffer.from(
+  // Strip any remaining non-ASCII characters that could break SVG XML
+  const svgString = (
     `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
     `<rect width="${W}" height="${H}" fill="#000000"/>` +
     elements.join('') +
     `</svg>`
-  )
+  ).replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\uD7FF\uE000-\uFFFD]/g, '')
+
+  return Buffer.from(svgString)
 }
 
 // ── Render image ──────────────────────────────────────────────────────────────
 
 async function renderCard(rawText: string, fontSize: number): Promise<string> {
-  const svg = buildSvg(rawText, fontSize)
+  try {
+    const svg = buildSvg(rawText, fontSize)
 
-  const buf = await sharp({
-    create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
-  })
-    .composite([{ input: svg, blend: 'over' }])
-    .jpeg({ quality: 95 })
-    .toBuffer()
+    const buf = await sharp({
+      create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .composite([{ input: svg, blend: 'over' }])
+      .jpeg({ quality: 95 })
+      .toBuffer()
 
-  return `data:image/jpeg;base64,${buf.toString('base64')}`
+    return `data:image/jpeg;base64,${buf.toString('base64')}`
+  } catch (err: any) {
+    console.error('renderCard error:', err.message)
+    // Fallback: plain black image with minimal safe text
+    const safeTopic = rawText.substring(0, 30).replace(/[^a-zA-Z0-9 .]/g, '')
+    const fallbackSvg = Buffer.from(
+      `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
+      `<rect width="${W}" height="${H}" fill="#000000"/>` +
+      `<text x="${PADDING_L}" y="200" font-family="Arial" font-size="60" fill="white">${safeTopic}</text>` +
+      `</svg>`
+    )
+    const buf = await sharp({
+      create: { width: W, height: H, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .composite([{ input: fallbackSvg, blend: 'over' }])
+      .jpeg({ quality: 95 })
+      .toBuffer()
+    return `data:image/jpeg;base64,${buf.toString('base64')}`
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
