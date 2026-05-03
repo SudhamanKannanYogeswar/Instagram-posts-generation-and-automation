@@ -30,58 +30,77 @@ export async function generateFinanceContent(
 ): Promise<GeneratedContent> {
   const { topic, tone = 'educational', includeStats = true, categoryId } = params
 
-  // Get category-specific system prompt
   const category = getCategoryById(categoryId || 'personal_finance') || DEFAULT_CATEGORY
-  const systemPrompt = category.systemPrompt + `\nTone: ${tone}`
+
+  const systemPrompt = `${category.systemPrompt}
+
+You write content that makes people stop scrolling and think "I never knew this."
+You use REAL specific numbers, REAL Indian names, REAL scenarios.
+You always include a COMPARISON between two people or two choices — this is the most viral format.
+You write like a storyteller, not a teacher.
+Tone: ${tone}`
 
   const userPrompt = `Create a viral Instagram Reel for Indian audience about: ${topic}
 
-CRITICAL FORMAT RULES:
-- Write ONLY in short, punchy lines. NEVER write paragraphs.
-- Each line = 1 thought. Max 10 words per line.
-- Use blank lines between sections.
-- NO emojis anywhere.
-- Use Rs. for rupees (not the symbol).
-${includeStats ? '- Include real Indian statistics and numbers.' : ''}
+QUALITY RULES — your content must:
+1. Use a COMPARISON (Person A vs Person B, or Choice A vs Choice B) — this is mandatory
+2. Use SPECIFIC numbers (not Rs.10,000 — use Rs.8,340 or Rs.12,500)
+3. Include a TWIST or SURPRISING FACT that most people don't know
+4. Reference REAL Indian life: salary credit day, Diwali shopping, EMI due date, office canteen, etc.
+5. Make the reader feel "this is exactly my situation"
+6. NO generic advice like "start saving" — give SPECIFIC actionable insight
 
-SCRIPT FORMAT — write exactly like this:
-Short punchy line.
-Another short line.
+FORMAT RULES:
+- Short punchy lines only. NO paragraphs.
+- Blank lines between sections.
+- NO emojis in script or image text.
+- Build tension, then reveal the twist.
+- End with a question that makes them think.
 
-New thought.
-Keep it punchy.
+COMPARISON EXAMPLE (use this style for hookImageText):
+"Arjun and Vikram both earn Rs.65,000/month.
+Both are 27 years old.
+Both have the same expenses.
 
-Use real numbers.
-Rs.5,000 SIP for 20 years = Rs.66 lakh.
+Arjun puts Rs.8,000 in FD every month.
+Vikram puts Rs.8,000 in SIP every month.
 
-End with a question or insight.
+At age 50:
+Arjun has Rs.38 lakh.
+Vikram has Rs.1.4 crore.
 
----
+Same salary. Same years. Same amount.
+Different decision."
 
-HOOK IMAGE TEXT — story that stops the scroll:
-Write a relatable real-life scenario.
-Short lines. Like a story unfolding.
-Make the reader feel "this is me".
-Use real numbers and situations.
-End with a cliffhanger or shocking fact.
+CONTENT BREAKDOWN EXAMPLE (use this style for contentImageText):
+"Why the difference?
 
-CONTENT IMAGE TEXT — the valuable content:
-The actual insight, data, or steps.
-Structured clearly.
-Use numbers, percentages, comparisons.
-End with a takeaway or question.
+FD gives 6-7% returns.
+Inflation is 6%.
+Real return: almost zero.
 
----
+SIP in equity gives 12-15% CAGR.
+After inflation: 6-9% real return.
+
+Rs.8,000/month for 23 years:
+FD: Rs.38 lakh
+SIP: Rs.1.4 crore
+
+The gap: Rs.1.02 crore.
+
+That is the cost of playing it safe."
+
+${includeStats ? 'Include real Indian statistics and specific fund performance data.' : ''}
 
 Return as JSON:
 {
-  "hook": "one line hook sentence",
-  "script": "full script in short punchy lines with blank lines between sections",
+  "hook": "one powerful hook line that creates curiosity or shock",
+  "script": "full script with comparison story, short punchy lines, blank lines between sections, ends with a question",
   "caption": "Instagram caption with emojis",
-  "hashtags": ["tag1", "tag2"],
+  "hashtags": ["tag1", "tag2", "tag3"],
   "cta": "call to action",
-  "hookImageText": "hook image text - short punchy story lines, NO emojis, blank lines between sections",
-  "contentImageText": "content image text - data/facts/steps, NO emojis, blank lines between points"
+  "hookImageText": "comparison story - two real Indian names, specific numbers, same starting point, shocking difference at the end. NO emojis. Blank lines between sections.",
+  "contentImageText": "the WHY breakdown - specific numbers, percentages, the surprising reason behind the difference. NO emojis. Blank lines between points."
 }`
 
   try {

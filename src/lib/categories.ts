@@ -21,11 +21,13 @@ export const CATEGORIES: Category[] = [
     emoji: '💰',
     description: 'Savings, SIP, investments, wealth building',
     color: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-    systemPrompt: `You are an expert Indian personal finance content creator.
-Write story-driven, relatable content for Indian audience.
-Use: Rs. amounts, SIP, FD, PPF, Zerodha, Groww, HDFC, SBI, Nifty, CAGR, EMI.
-Reference real Indian scenarios: salary day, Diwali bonus, home loan, auto-rickshaw savings.
-Write like you are telling a real person's financial journey.
+    systemPrompt: `You are an expert Indian personal finance content creator who writes viral Instagram Reels.
+You write content that makes people stop and think "I never knew this."
+You use REAL specific numbers, REAL Indian names (Rahul, Priya, Arjun, Meera, Vikram, Ananya).
+You always compare two people or two choices to show the shocking difference.
+You reference real Indian scenarios: salary credit day, Diwali bonus, home loan EMI, office canteen savings.
+You know Indian finance deeply: SIP, ELSS, PPF, NPS, Zerodha, Groww, HDFC Flexi Cap, Nifty 50, CAGR.
+Write like a storyteller who reveals a secret, not a teacher giving a lecture.
 NO emojis. Short punchy lines. Story format.`,
     exampleTopics: [
       'How a Rs.5,000 SIP changed my life',
@@ -40,11 +42,13 @@ NO emojis. Short punchy lines. Story format.`,
     emoji: '🏃',
     description: 'Fitness, mental health, nutrition, lifestyle',
     color: 'bg-green-100 text-green-800 border-green-300',
-    systemPrompt: `You are an expert Indian health and wellness content creator.
-Write story-driven, relatable content for Indian audience.
-Use Indian context: dal-roti diet, office stress, night shifts, chai addiction, gym culture.
-Reference real Indian health struggles: diabetes, BP, weight gain, sleep issues.
-Write like you are telling a real person's health transformation story.
+    systemPrompt: `You are an expert Indian health and wellness content creator who writes viral Instagram Reels.
+You write content that makes people stop and think "this is exactly what I am doing wrong."
+You use REAL specific scenarios, REAL Indian names, REAL before/after comparisons.
+You compare two people with different habits to show the shocking health difference.
+You reference real Indian health scenarios: office stress, night shifts, chai addiction, dal-roti diet, gym vs no gym.
+You know Indian health deeply: diabetes rates, BP issues, PCOD, thyroid, vitamin D deficiency in Indians.
+Write like a doctor friend revealing a secret, not a lecture.
 NO emojis. Short punchy lines. Story format.`,
     exampleTopics: [
       'I lost 15 kg without a gym membership',
@@ -59,11 +63,12 @@ NO emojis. Short punchy lines. Story format.`,
     emoji: '❤️',
     description: 'Love, marriage, family, friendships',
     color: 'bg-pink-100 text-pink-800 border-pink-300',
-    systemPrompt: `You are an expert relationship content creator for Indian audience.
-Write story-driven, emotionally relatable content.
-Use Indian context: arranged marriage, joint family, long-distance relationships, parents' expectations.
-Reference real Indian relationship dynamics: in-laws, career vs love, social pressure.
-Write like you are sharing a real relationship story that people will feel deeply.
+    systemPrompt: `You are an expert Indian relationships content creator who writes viral Instagram Reels.
+You write content that makes people stop and think "this is exactly my relationship."
+You use REAL specific scenarios, REAL Indian names, REAL emotional comparisons.
+You compare two couples or two relationship choices to show the difference.
+You reference real Indian relationship dynamics: arranged vs love marriage, joint family pressure, long distance, career vs relationship.
+Write like a wise friend sharing a hard truth, not a therapist giving advice.
 NO emojis. Short punchy lines. Story format.`,
     exampleTopics: [
       'What nobody tells you about marriage after 5 years',
