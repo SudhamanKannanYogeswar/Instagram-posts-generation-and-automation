@@ -57,24 +57,19 @@ export async function POST(request: NextRequest) {
 
     if (contentError) throw new Error('Failed to save content: ' + contentError.message)
 
-    // 4. Generate 5 images in parallel:
-    //    [0] story_hook     — Version 1 hook card
-    //    [1] story_content  — Version 1 content card
-    //    [2] story_combined — Version 1 combined (hook + content)
-    //    [3] comp_hook      — Version 2 comparison hook card
-    //    [4] comp_content   — Version 2 comparison content card
-
+    // 4. Generate 5 images — pass isFinance flag for branding
+    const isFinance = (categoryId || 'personal_finance') === 'personal_finance'
     const storyHookText    = gc.hookImageText    || gc.hook   || topic
     const storyContentText = gc.contentImageText || gc.script || topic
     const compHookText     = gc.comparisonHookText    || storyHookText
     const compContentText  = gc.comparisonContentText || storyContentText
 
     const [img0, img1, img2, img3, img4] = await Promise.all([
-      generateHookImage(storyHookText),
-      generateContentImage(storyContentText),
-      generateCombinedImage(storyHookText, storyContentText),
-      generateHookImage(compHookText),
-      generateContentImage(compContentText),
+      generateHookImage(storyHookText, isFinance),
+      generateContentImage(storyContentText, isFinance),
+      generateCombinedImage(storyHookText, storyContentText, isFinance),
+      generateHookImage(compHookText, isFinance),
+      generateContentImage(compContentText, isFinance),
     ])
 
     const imageDefs = [
